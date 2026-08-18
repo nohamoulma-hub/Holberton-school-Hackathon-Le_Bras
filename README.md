@@ -11,7 +11,7 @@ uvicorn app.main:app --reload
 ```
 
 - `GET /health` : vérifie que le back tourne.
-- `POST /agent/ping` (body `{"prompt": "..."}`) : appel LLM réel (Claude), retourne la réponse.
+- `POST /chat` (body `{"message": "..."}`) : appel LLM réel (Claude), retourne `{"response": "..."}`.
 - Doc interactive : http://127.0.0.1:8000/docs
 
 Le front (palier 2, côté Jo) n'est pas encore branché : ce squelette expose uniquement l'API back testable via `/docs` ou `curl`.

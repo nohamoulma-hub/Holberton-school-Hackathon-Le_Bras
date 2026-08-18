@@ -12,8 +12,8 @@ app = FastAPI(title="Le Bras - Back")
 client = anthropic.Anthropic()
 
 
-class PingRequest(BaseModel):
-    prompt: str
+class ChatRequest(BaseModel):
+    message: str
 
 
 @app.get("/health")
@@ -21,8 +21,8 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-@app.post("/agent/ping")
-def agent_ping(body: PingRequest) -> dict:
+@app.post("/chat")
+def chat(body: ChatRequest) -> dict:
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY manquante (voir .env)")
 
@@ -30,8 +30,8 @@ def agent_ping(body: PingRequest) -> dict:
         model="claude-opus-5",
         max_tokens=1024,
         thinking={"type": "adaptive"},
-        messages=[{"role": "user", "content": body.prompt}],
+        messages=[{"role": "user", "content": body.message}],
     )
 
     text = next((block.text for block in response.content if block.type == "text"), "")
-    return {"response": text, "model": response.model}
+    return {"response": text}
