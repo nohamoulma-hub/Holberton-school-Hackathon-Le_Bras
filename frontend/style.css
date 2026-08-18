@@ -40,3 +40,52 @@ button {
     padding-top: 20px;
     border-top: 1px solid #ddd;
 }
+
+.tool-trace {
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid #ddd;
+}
+
+.tool-trace summary {
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.request-metrics {
+    color: #555;
+    font-size: 0.9rem;
+}
+
+.trace-step {
+    margin-top: 12px;
+    padding: 12px;
+    background: #f7f7f7;
+    border-left: 4px solid #555;
+    border-radius: 4px;
+}
+
+.trace-step.pending {
+    border-left-color: #b7791f;
+}
+
+.trace-step.success {
+    border-left-color: #2f855a;
+}
+
+.trace-step.error {
+    border-left-color: #c53030;
+}
+
+.trace-step p {
+    margin: 6px 0;
+}
+
+.trace-step pre {
+    margin: 6px 0 10px;
+    padding: 8px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    background: #fff;
+    border: 1px solid #ddd;
+}

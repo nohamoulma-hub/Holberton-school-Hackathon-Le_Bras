@@ -2,14 +2,17 @@
 
 LE BRAS est un prototype d'agent conversationnel développé dans le cadre d'un hackathon. L'utilisateur saisit une demande dans une interface web simple, puis le backend transmet cette demande à Claude via l'API Anthropic et affiche la réponse obtenue.
 
-## État actuel — Palier 2
+## État actuel — Palier 3
 
-Le socle du Palier 2 est opérationnel :
+Le Palier 3 est opérationnel :
 
 - le frontend HTML/CSS/JavaScript est servi par FastAPI ;
 - `GET /health` permet de vérifier que le backend fonctionne ;
-- `POST /chat` transmet un message à Claude et renvoie sa réponse ;
+- `POST /chat` transmet un message à Claude et renvoie sa réponse avec la trace des outils ;
 - le frontend appelle `/chat` sans URL de backend codée en dur ;
+- Claude choisit parmi sept outils via le Tool Calling natif Anthropic ;
+- les effets de bord sont idempotents, audités et mis en attente d'une validation humaine ;
+- les outils locaux réversibles peuvent être annulés une fois ;
 - l'ensemble de l'application fonctionne dans un seul conteneur Docker exposé sur le port `8000`.
 
 ## Architecture actuelle
@@ -20,7 +23,10 @@ Navigateur
     -> POST /chat
     -> FastAPI
     -> API Anthropic/Claude
-    -> réponse affichée dans le frontend
+    -> tool_use
+    -> action en attente de validation
+    -> Tool local après approbation
+    -> tool_result et réponse affichés dans le frontend
 ```
 
 FastAPI sert à la fois l'API et les fichiers statiques du frontend. Aucun conteneur frontend séparé n'est utilisé.
@@ -31,11 +37,16 @@ FastAPI sert à la fois l'API et les fichiers statiques du frontend. Aucun conte
 .
 ├── app/
 │   ├── __init__.py
-│   └── main.py
+│   ├── agent.py
+│   ├── db.py
+│   ├── main.py
+│   └── tools.py
 ├── frontend/
 │   ├── app.js
 │   ├── index.html
 │   └── style.css
+├── tests/
+│   └── test_palier3.py
 ├── .dockerignore
 ├── .env.example
 ├── .gitignore
@@ -119,9 +130,30 @@ Réponse :
 
 ```json
 {
-  "response": "..."
+  "response": "...",
+  "trace": [],
+  "plan_id": "...",
+  "metrics": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0,
+    "latency_ms": 0,
+    "estimated_cost": null,
+    "cost_status": "non_configured"
+  }
 }
 ```
+
+Les actions à effet de bord apparaissent d'abord avec le statut `pending`. Elles peuvent ensuite être validées ou refusées explicitement :
+
+```text
+POST /actions/{action_id}/approve
+POST /actions/{action_id}/reject
+```
+
+Le journal récent des appels d'outils est disponible avec `GET /trace`.
+
+Les intégrations sont locales pour ce hackathon : l'issue tracker, les records, les événements et l'audit utilisent SQLite ; la messagerie écrit des fichiers Markdown sous `outbox/` ; les documents sont générés sous `files/`.
 
 ## Variables d'environnement et sécurité
 
@@ -137,17 +169,17 @@ La vraie clé Anthropic doit être enregistrée uniquement dans le fichier local
 - Docker
 - Docker Compose
 
-## Pourquoi un seul conteneur au Palier 2 ?
+## Pourquoi un seul conteneur au Palier 3 ?
 
-Le Palier 2 correspond au socle minimal de l'application. FastAPI peut servir directement le frontend statique et l'API, sans base de données, cache ou autre service indépendant. Un seul conteneur limite donc la configuration et permet de lancer toute l'application avec une seule commande.
+FastAPI sert directement le frontend statique et l'API, tandis que SQLite et les dossiers de simulation restent locaux au projet. Aucun service indépendant n'est nécessaire à ce stade. Un seul conteneur limite donc la configuration et permet de lancer toute l'application avec une seule commande.
 
 ## Limites actuelles
 
 Le projet ne propose pas encore :
 
 - de plan structuré ;
-- de validation ou de refus action par action ;
-- de Tools pour exécuter des actions ;
-- de mécanisme d'idempotence ;
-- d'audit des actions ;
-- de fonction d'annulation (`undo`).
+- d'interface complète pour approuver ou refuser chaque action ;
+- de véritables intégrations tierces pour les issues, messages ou calendriers ;
+- d'authentification ou de gestion multi-utilisateurs ;
+- de gestion des validations concurrentes ;
+- d'annulation multi-niveaux.
