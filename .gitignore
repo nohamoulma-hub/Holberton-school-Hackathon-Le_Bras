@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.db
+/outbox/
+/files/
+node_modules/
+.DS_Store
