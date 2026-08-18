@@ -2,13 +2,15 @@
 
 ## Le problème (5 lignes)
 
-De nombreuses situations d'équipe demandent d'accomplir manuellement une série de tâches dispersées sur plusieurs outils (arrivée d'un stagiaire, clôture d'un projet, préparation d'un événement, incident à traiter...), sans processus unifié. Résultat : oublis, doublons, tâches faites en retard ou pas faites du tout, et une exécution bâclée du cas à traiter. On propose un agent capable de transformer n'importe quelle intention en langage naturel, quel que soit le cas de figure, en un plan d'actions concrètes touchant plusieurs systèmes, et de soumettre ce plan à validation humaine **action par action**, puis de n'exécuter que ce qui a été approuvé. Chaque exécution est journalisée de façon idempotente et annulable, pour qu'aucune action à effet de bord ne parte sans accord humain explicite et traçable. L'onboarding d'un stagiaire sert d'exemple de référence pour la démo, mais l'agent et ses outils restent conçus pour s'adapter à d'autres types de demandes.
+De nombreuses situations d'équipe demandent d'accomplir manuellement une série de tâches dispersées sur plusieurs outils (arrivée d'un stagiaire, clôture d'un projet, préparation d'un événement, incident à traiter...), sans processus unifié. Résultat : oublis, doublons, tâches faites en retard ou pas faites du tout, et une exécution bâclée du cas à traiter. On propose un agent capable de transformer toute intention compatible avec les outils disponibles en langage naturel, quel que soit le cas de figure, en un plan d'actions concrètes touchant plusieurs systèmes, et de soumettre ce plan à validation humaine **action par action**, puis de n'exécuter que ce qui a été approuvé. Chaque exécution est journalisée de façon idempotente et annulable, pour qu'aucune action à effet de bord ne parte sans accord humain explicite et traçable. L'onboarding d'un stagiaire sert d'exemple de référence pour la démo, mais l'agent et ses outils restent conçus pour s'adapter à d'autres types de demandes.
 
 ## User stories (3 max)
 
-1. **En tant que** responsable d'équipe, **je veux** décrire en une phrase une situation à traiter, quel qu'en soit le type (arrivée d'un stagiaire, clôture d'un projet, préparation d'un événement...), **pour que** l'agent me propose un plan d'actions concret sans rien exécuter immédiatement.
-2. **En tant que** responsable d'équipe, **je veux** approuver ou refuser chaque action du plan individuellement **pour** garder le contrôle total sur ce qui part réellement (issue créée, message envoyé, event calendrier posé...).
-3. **En tant que** responsable d'équipe, **je veux** consulter un journal d'audit de toutes les actions exécutées et pouvoir annuler la dernière **pour** corriger une erreur sans perdre la traçabilité.
+1. **En tant qu'utilisateur**, je veux exprimer une intention en langage naturel afin que l'agent me propose un plan d'actions adapté sans rien exécuter immédiatement.
+
+2. **En tant qu'utilisateur**, je veux approuver ou refuser chaque action du plan individuellement afin de garder le contrôle sur les actions réellement exécutées.
+
+3. **En tant qu'utilisateur**, je veux consulter un journal d'audit afin de connaître les actions exécutées, refusées ou ayant échoué et de garder une trace de ce qui s'est passé.
 
 ## Hors scope (10 items)
 
@@ -81,10 +83,9 @@ Le scénario stagiaire ci-dessous sert de fil rouge pour la démo, mais le même
 
 ## Répartition du travail
 
-*(à ajuster avec vos prénoms réels, squelette proposé pour 2 personnes)*
 
-- **Toi** : back (API orchestrateur), agent/planner (appel LLM + tool calling, capable de raisonner sur des intentions variées), idempotence, journal d'audit + annulation.
-- **Jo** : front (UI d'approbation action par action), les 5 adaptateurs Tool génériques (issue/message/record/document/calendrier), rédaction README/AGENTS.md.
+- **Noham** : back (API orchestrateur), agent/planner (appel LLM + tool calling, capable de raisonner sur des intentions variées), gestion des doublons, journal d'audit + annulation.
+- **Jonathan** : front (UI d'approbation action par action), les 5 adaptateurs Tool génériques (issue/message/record/document/calendrier), rédaction README/AGENTS.md.
 - **En commun** : SPEC.md, schéma d'architecture, script de démo 5 min, tag `v1.0`.
 
 ---
