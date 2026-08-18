@@ -2,7 +2,7 @@
 
 ## Le problème (5 lignes)
 
-De nombreuses situations d'équipe demandent d'accomplir manuellement une série de tâches dispersées sur plusieurs outils (arrivée d'un stagiaire, clôture d'un projet, préparation d'un événement, incident à traiter...), sans processus unifié. Résultat : oublis, doublons, tâches faites en retard ou pas faites du tout, et une exécution bâclée du cas à traiter. On propose un agent capable de transformer toute intention compatible avec les outils disponibles en langage naturel, quel que soit le cas de figure, en un plan d'actions concrètes touchant plusieurs systèmes, et de soumettre ce plan à validation humaine **action par action**, puis de n'exécuter que ce qui a été approuvé. Chaque exécution est journalisée de façon idempotente et annulable, pour qu'aucune action à effet de bord ne parte sans accord humain explicite et traçable. L'onboarding d'un stagiaire sert d'exemple de référence pour la démo, mais l'agent et ses outils restent conçus pour s'adapter à d'autres types de demandes.
+De nombreuses situations d'équipe demandent d'accomplir manuellement une série de tâches dispersées sur plusieurs outils (arrivée d'un stagiaire, clôture d'un projet, préparation d'un événement, incident à traiter...), sans processus unifié. Résultat : oublis, doublons, tâches faites en retard ou pas faites du tout, et une exécution bâclée du cas à traiter. On propose un agent capable de transformer toute intention formulée en langage naturel et compatible avec les outils disponibles en un plan d’actions concrètes, quel que soit le cas de figure, en un plan d'actions concrètes touchant plusieurs systèmes, et de soumettre ce plan à validation humaine **action par action**, puis de n'exécuter que ce qui a été approuvé. Chaque exécution est journalisée de façon idempotente et annulable, pour qu'aucune action à effet de bord ne parte sans accord humain explicite et traçable. L'onboarding d'un stagiaire sert d'exemple de référence pour la démo, mais l'agent et ses outils restent conçus pour s'adapter à d'autres types de demandes.
 
 ## User stories (3 max)
 
@@ -79,7 +79,7 @@ Le scénario stagiaire ci-dessous sert de fil rouge pour la démo, mais le même
 3. L'utilisateur approuve 4 actions et refuse l'event calendrier (la salle n'est pas encore réservée).
 4. Le système exécute uniquement les 4 actions approuvées, dans l'ordre, chacune journalisée avec son `idempotency_key`.
 5. Le journal d'audit affiche les 4 actions exécutées, horodatées, avec statut et lien vers l'effet produit (fichier, ligne en base).
-6. L'utilisateur déclenche l'annulation de la dernière action exécutée (bonus) ; le journal passe son statut à "annulé" avec la compensation appliquée.
+6. L’utilisateur consulte le journal d’audit et vérifie que les actions approuvées ont été exécutées et que l’action refusée ne l’a pas été.
 
 ## Répartition du travail
 
