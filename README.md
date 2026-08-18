@@ -1,17 +1,23 @@
 # Holberton-school-Hackathon-Le_Bras
 
-## Back : quickstart (palier 2, socle back seulement)
+## Quickstart Docker
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env   # puis renseigner ANTHROPIC_API_KEY dans .env
-uvicorn app.main:app --reload
+cp .env.example .env
 ```
 
-- `GET /health` : vérifie que le back tourne.
-- `POST /chat` (body `{"message": "..."}`) : appel LLM réel (Claude), retourne `{"response": "..."}`.
-- Doc interactive : http://127.0.0.1:8000/docs
+Ajoutez ensuite votre clé Anthropic dans `.env` :
 
-Le front (palier 2, côté Jo) n'est pas encore branché : ce squelette expose uniquement l'API back testable via `/docs` ou `curl`.
+```dotenv
+ANTHROPIC_API_KEY=votre_cle_anthropic
+```
+
+Lancez l'application :
+
+```bash
+docker compose up --build
+```
+
+- Application : http://localhost:8000
+- Health : http://localhost:8000/health
+- Docs FastAPI : http://localhost:8000/docs

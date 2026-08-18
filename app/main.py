@@ -1,8 +1,10 @@
 import os
+from pathlib import Path
 
 import anthropic
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 load_dotenv()
@@ -35,3 +37,7 @@ def chat(body: ChatRequest) -> dict:
 
     text = next((block.text for block in response.content if block.type == "text"), "")
     return {"response": text}
+
+
+frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
+app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
