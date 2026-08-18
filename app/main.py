@@ -1,17 +1,21 @@
+import logging
 import os
 from pathlib import Path
 
-import anthropic
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from app.agent import run_agent
+from app.db import get_recent_audit_log, init_db
+
 load_dotenv()
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+init_db()
 
 app = FastAPI(title="Le Bras - Back")
-
-client = anthropic.Anthropic()
 
 
 class ChatRequest(BaseModel):
@@ -28,15 +32,14 @@ def chat(body: ChatRequest) -> dict:
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY manquante (voir .env)")
 
-    response = client.messages.create(
-        model="claude-opus-5",
-        max_tokens=1024,
-        thinking={"type": "adaptive"},
-        messages=[{"role": "user", "content": body.message}],
-    )
+    return run_agent(body.message)
 
-    text = next((block.text for block in response.content if block.type == "text"), "")
-    return {"response": text}
+
+@app.get("/trace")
+def trace(limit: int = 20) -> dict:
+    """Journal des derniers appels d'outils (idempotency_key, input, résultat/erreur) — pour
+    montrer la séquence sans avoir besoin d'un print live."""
+    return {"calls": get_recent_audit_log(limit)}
 
 
 frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
