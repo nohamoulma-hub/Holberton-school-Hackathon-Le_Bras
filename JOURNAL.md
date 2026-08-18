@@ -21,3 +21,20 @@ Jo a demandé un format d'entrée/sortie précis pour le chat (`POST /chat` avec
 ## Entrée 5 — 2026-08-18, accompagnement au lancement local
 
 Difficulté à lancer et tester le serveur en local (confusion entre l'URL racine `/` et la doc interactive `/docs`, activation du venv, où placer la clé API). L'agent a détaillé les commandes pas à pas (`python3 -m venv .venv`, activation, `pip install -r requirements.txt`, `uvicorn app.main:app --reload`) et expliqué comment tester la route `/chat` via Swagger UI (`/docs`) et via `curl`, pour vérifier que l'appel LLM réel remonte bien à l'écran (exigence du checkpoint palier 2).
+
+## Entrée 6 — 2026-08-18, fusion avec le front de Jo
+
+Merge de la branche `dev` (Jo) apportant le premier front (HTML/CSS/JS) et le Dockerfile/docker-compose. Le front appelle `POST /chat` avec `{"message": "..."}` — contrat déjà aligné avec le back. `app/main.py` sert désormais le dossier `frontend/` en fichiers statiques sur `/`, en plus des routes API.
+
+## Entrée 7 — 2026-08-18, premier outil réel (palier 3)
+
+Demandé à l'agent de construire la boucle de tool calling pour le palier 3 : au moins deux outils réels branchés, choisis par le modèle lui-même (pas de routage `if "cherche" in message`), trace visible, gestion des erreurs d'outil. Résultat :
+- `app/tools.py` : deux outils avec signature typée et description écrite pour le modèle — `create_issue` (insertion SQLite) et `send_message` (écriture d'un `.md` dans `/outbox/`). Exécution idempotente (clé = hash outil + input) et journalisée dans `audit_log`.
+- `app/agent.py` : boucle avec le tool calling natif de l'API Claude (`tools=...`, pas de règle codée en dur). Chaque appel est chronométré et loggé.
+- `app/main.py` : `/chat` renvoie `{"response": ..., "trace": [...]}` ; ajout de `GET /trace` pour montrer la séquence des appels sans ajouter de `print`.
+
+Tests manuels validés : l'agent choisit le bon outil selon la demande, répond directement sans outil quand ce n'est pas pertinent, gère une entrée invalide sans planter (`ok: False` + message clair), et reste fonctionnel quand un outil est retiré de la liste (dit clairement qu'il n'y a plus accès au lieu d'halluciner un résultat).
+
+Bug trouvé et corrigé en cours de route : `app/agent.py` créait le client Anthropic au chargement du module, mais `main.py` l'importait avant d'appeler `load_dotenv()` — la clé API n'était donc jamais chargée à temps, d'où des 500 systématiques sur `/chat`. Corrigé en rendant `agent.py` autonome sur le chargement de son `.env`.
+
+**Reste à faire pour le checkpoint palier 3** : un panneau debug dans le front pour afficher la trace visuellement (actuellement disponible via `GET /trace` ou le champ `trace` de `/chat`, mais pas encore affiché dans l'UI) ; la carte bonus "coût affiché" (tokens/coût/latence par exécution) n'est pas encore implémentée.
