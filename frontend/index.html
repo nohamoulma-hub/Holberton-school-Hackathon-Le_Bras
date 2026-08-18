@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Le Bras</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main class="container">
+        <h1>LE BRAS</h1>
+
+        <p>Décris ce que tu veux faire.</p>
+
+        <form id="chat-form">
+            <textarea
+                id="message"
+                placeholder="Exemple : Prépare l'arrivée du stagiaire Paul..."
+                required
+            ></textarea>
+
+            <button type="submit">Envoyer</button>
+        </form>
+
+        <section class="response">
+            <h2>Réponse de l'agent</h2>
+            <p id="agent-response">En attente d'une demande...</p>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
