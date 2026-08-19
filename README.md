@@ -14,6 +14,11 @@ Le Palier 3 est opérationnel :
 - les effets de bord sont idempotents, audités et mis en attente d'une validation humaine ;
 - le frontend permet d'approuver ou refuser chaque action en attente ;
 - les outils locaux réversibles peuvent être annulés une fois ;
+- les outils peuvent être activés ou désactivés depuis le menu Paramètre ;
+- les réponses de l'agent prennent en charge un rendu Markdown limité et sécurisé ;
+- un compte local permet d'afficher le profil et de conserver les historiques personnels ;
+- les conversations et actions acceptées sont enregistrées dans SQLite ;
+- un calendrier interactif permet de sélectionner une date et de préparer une demande ;
 - l'ensemble de l'application fonctionne dans un seul conteneur Docker exposé sur le port `8000`.
 
 ## Architecture actuelle
@@ -28,6 +33,7 @@ Navigateur
     -> action en attente de validation
     -> Tool local après approbation
     -> tool_result et réponse affichés dans le frontend
+    -> historique SQLite associé au compte connecté
 ```
 
 FastAPI sert à la fois l'API et les fichiers statiques du frontend. Aucun conteneur frontend séparé n'est utilisé.
@@ -38,8 +44,10 @@ FastAPI sert à la fois l'API et les fichiers statiques du frontend. Aucun conte
 .
 ├── app/
 │   ├── __init__.py
+│   ├── accounts.py
 │   ├── agent.py
 │   ├── db.py
+│   ├── history.py
 │   ├── main.py
 │   └── tools.py
 ├── frontend/
@@ -47,6 +55,7 @@ FastAPI sert à la fois l'API et les fichiers statiques du frontend. Aucun conte
 │   ├── index.html
 │   └── style.css
 ├── tests/
+│   ├── test_accounts_history.py
 │   └── test_palier3.py
 ├── .dockerignore
 ├── .env.example
@@ -154,13 +163,44 @@ POST /actions/{action_id}/reject
 
 Le journal récent des appels d'outils est disponible avec `GET /trace`.
 
+### Compte et profil
+
+```text
+POST /auth/register
+POST /auth/login
+POST /auth/logout
+GET  /auth/me
+```
+
+L'inscription et la connexion utilisent une adresse e-mail et un mot de passe d'au moins huit caractères. La session est conservée dans un cookie `HttpOnly` pendant sept jours.
+
+### Historiques personnels
+
+Ces routes nécessitent une connexion :
+
+```text
+GET /history/conversations
+GET /history/accepted-actions
+```
+
+Les conversations sont enregistrées après une réponse de l'agent. Les actions apparaissent dans l'historique des tâches acceptées après leur approbation et leur exécution.
+
+### Configuration des Tools
+
+```text
+GET  /tools
+POST /tools/{tool_name}/toggle
+```
+
+L'état d'un Tool est appliqué dès la demande suivante, sans redémarrer le serveur.
+
 La clé d'idempotence d'une action dépend de son `plan_id`, de son `action_index`, du Tool et de ses arguments. Rejouer exactement la même action ne répète donc pas son effet, sans confondre deux plans ou deux positions différentes.
 
-Les intégrations sont locales pour ce hackathon : l'issue tracker, les records, les événements et l'audit utilisent SQLite ; la messagerie écrit des fichiers Markdown sous `outbox/` ; les documents sont générés sous `files/`.
+Les intégrations sont locales pour ce hackathon : les comptes, historiques, issues, records, événements et audits utilisent SQLite ; la messagerie écrit des fichiers Markdown sous `outbox/` ; les documents sont générés sous `files/`. Le fichier SQLite est conservé dans le volume Docker `app_data` afin de survivre aux reconstructions de l'image.
 
 ## Variables d'environnement et sécurité
 
-La vraie clé Anthropic doit être enregistrée uniquement dans le fichier local `.env`. Ce fichier ne doit jamais être commité ni envoyé sur un dépôt distant. Le fichier `.env.example` documente uniquement le nom de la variable attendue et ne doit contenir aucune vraie clé.
+La vraie clé Anthropic doit être enregistrée uniquement dans le fichier local `.env`. Ce fichier ne doit jamais être commité ni envoyé sur un dépôt distant. Le fichier `.env.example` documente uniquement les variables attendues et ne doit contenir aucune vraie clé. Les mots de passe sont dérivés avec PBKDF2 et les jetons de session ne sont stockés qu'après hachage.
 
 ## Stack technique
 
@@ -168,13 +208,14 @@ La vraie clé Anthropic doit être enregistrée uniquement dans le fichier local
 - FastAPI
 - Uvicorn
 - Anthropic SDK
+- SQLite
 - HTML, CSS et JavaScript
 - Docker
 - Docker Compose
 
 ## Pourquoi un seul conteneur au Palier 3 ?
 
-FastAPI sert directement le frontend statique et l'API, tandis que SQLite et les dossiers de simulation restent locaux au projet. Aucun service indépendant n'est nécessaire à ce stade. Un seul conteneur limite donc la configuration et permet de lancer toute l'application avec une seule commande.
+FastAPI sert directement le frontend statique et l'API, tandis que SQLite est conservé dans un volume Docker persistant. Aucun service indépendant n'est nécessaire à ce stade. Un seul conteneur limite donc la configuration et permet de lancer toute l'application avec une seule commande. PostgreSQL pourra remplacer cette couche de stockage si les besoins de concurrence ou de déploiement multi-instance le justifient.
 
 ## Limites actuelles
 
@@ -182,6 +223,6 @@ Le projet ne propose pas encore :
 
 - de plan structuré ;
 - de véritables intégrations tierces pour les issues, messages ou calendriers ;
-- d'authentification ou de gestion multi-utilisateurs ;
+- de récupération de mot de passe ou de vérification d'adresse e-mail ;
 - de gestion des validations concurrentes ;
 - d'annulation multi-niveaux.

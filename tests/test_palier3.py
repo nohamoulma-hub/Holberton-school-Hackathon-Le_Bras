@@ -375,7 +375,7 @@ class Palier3TestCase(unittest.TestCase):
             result = agent.run_agent("Que peux-tu faire ?")
         self.assertEqual(result["trace"], [])
         self.assertIn("outils", result["response"])
-        self.assertIn("Cette demande ne fait pas partie", agent.SYSTEM_PROMPT)
+        self.assertIn("ce n'est pas une action disponible", agent.SYSTEM_PROMPT)
 
 
 if __name__ == "__main__":
