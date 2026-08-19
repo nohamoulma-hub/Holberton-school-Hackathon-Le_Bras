@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import date
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -18,6 +19,7 @@ from app.accounts import (
     delete_session,
     get_user_from_session,
 )
+from app.calendar_events import list_calendar_events
 from app.db import database_is_ready, get_recent_audit_log, init_db
 from app.history import (
     link_actions_to_user,
@@ -143,6 +145,15 @@ def conversation_history(request: Request, limit: int = 50) -> dict:
 def accepted_action_history(request: Request, limit: int = 50) -> dict:
     user = current_user(request)
     return {"actions": list_accepted_actions(user["id"], limit)}
+
+
+@app.get("/calendar/events")
+def calendar_events(start: date | None = None, end: date | None = None) -> dict:
+    """Expose les événements PostgreSQL exécutés, avec un filtrage de période optionnel."""
+    try:
+        return {"events": list_calendar_events(start, end)}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/plans/latest")

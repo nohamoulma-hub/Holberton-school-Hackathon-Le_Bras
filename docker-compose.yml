@@ -22,6 +22,7 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-lebras}:${POSTGRES_PASSWORD:-lebras_local_password}@db:5432/${POSTGRES_DB:-lebras}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Paris}
     depends_on:
       db:
         condition: service_healthy

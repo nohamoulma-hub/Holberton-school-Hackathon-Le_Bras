@@ -23,6 +23,8 @@ const calendarPrevious = document.getElementById("calendar-previous");
 const calendarNext = document.getElementById("calendar-next");
 const calendarToday = document.getElementById("calendar-today");
 const calendarUseDate = document.getElementById("calendar-use-date");
+const calendarEventsDate = document.getElementById("calendar-events-date");
+const calendarEventsList = document.getElementById("calendar-events-list");
 const authView = document.getElementById("auth-view");
 const authTitle = document.getElementById("auth-title");
 const authDescription = document.getElementById("auth-description");
@@ -54,6 +56,10 @@ const today = new Date();
 today.setHours(0, 0, 0, 0);
 let currentCalendarMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 let selectedCalendarDate = new Date(today);
+let calendarEvents = [];
+let calendarEventsLoading = false;
+let calendarEventsError = "";
+let calendarEventsRequestId = 0;
 let currentUser = null;
 let authMode = "login";
 
@@ -66,6 +72,10 @@ const fullDateFormatter = new Intl.DateTimeFormat("fr-FR", {
     day: "numeric",
     month: "long",
     year: "numeric",
+});
+const calendarTimeFormatter = new Intl.DateTimeFormat("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
 });
 
 const ACTION_TITLES = {
@@ -154,6 +164,104 @@ function isSameDate(firstDate, secondDate) {
     return dateKey(firstDate) === dateKey(secondDate);
 }
 
+function eventsForDate(date) {
+    const key = dateKey(date);
+    return calendarEvents.filter((event) => String(event.start).slice(0, 10) === key);
+}
+
+function renderSelectedDateEvents() {
+    calendarEventsDate.textContent = fullDateFormatter.format(selectedCalendarDate);
+    calendarEventsList.replaceChildren();
+
+    if (calendarEventsLoading) {
+        const loading = document.createElement("p");
+        loading.className = "calendar-events-message";
+        loading.textContent = "Chargement des événements...";
+        calendarEventsList.appendChild(loading);
+        return;
+    }
+    if (calendarEventsError) {
+        const error = document.createElement("p");
+        error.className = "calendar-events-message error";
+        error.textContent = calendarEventsError;
+        calendarEventsList.appendChild(error);
+        return;
+    }
+
+    const selectedEvents = eventsForDate(selectedCalendarDate);
+    if (selectedEvents.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "calendar-events-message";
+        empty.textContent = "Aucun événement pour cette date.";
+        calendarEventsList.appendChild(empty);
+        return;
+    }
+
+    selectedEvents.forEach((event) => {
+        const item = document.createElement("article");
+        item.className = "calendar-event-item";
+
+        const title = document.createElement("strong");
+        title.textContent = event.title;
+
+        const start = new Date(event.start);
+        const end = new Date(start.getTime() + event.duration_min * 60_000);
+        const schedule = document.createElement("time");
+        schedule.dateTime = event.start;
+        schedule.textContent = (
+            `${calendarTimeFormatter.format(start)} - ${calendarTimeFormatter.format(end)}`
+        );
+
+        const attendees = document.createElement("p");
+        attendees.textContent = event.attendees.length > 0
+            ? `Participants : ${event.attendees.join(", ")}`
+            : "Aucun participant";
+
+        item.append(title, schedule, attendees);
+        calendarEventsList.appendChild(item);
+    });
+}
+
+async function loadCalendarEvents() {
+    const requestId = ++calendarEventsRequestId;
+    const start = new Date(
+        currentCalendarMonth.getFullYear(),
+        currentCalendarMonth.getMonth(),
+        1,
+    );
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+    calendarEvents = [];
+    calendarEventsLoading = true;
+    calendarEventsError = "";
+    renderCalendar();
+
+    try {
+        const parameters = new URLSearchParams({
+            start: dateKey(start),
+            end: dateKey(end),
+        });
+        const response = await fetch(`/calendar/events?${parameters.toString()}`);
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || "Impossible de charger les événements");
+        }
+        if (requestId !== calendarEventsRequestId) {
+            return;
+        }
+        calendarEvents = Array.isArray(data.events) ? data.events : [];
+    } catch (error) {
+        if (requestId !== calendarEventsRequestId) {
+            return;
+        }
+        calendarEventsError = error.message;
+    } finally {
+        if (requestId === calendarEventsRequestId) {
+            calendarEventsLoading = false;
+            renderCalendar();
+        }
+    }
+}
+
 function setActiveNavigation(activeButton) {
     [
         profileToggle,
@@ -235,17 +343,37 @@ function renderCalendar() {
             button.setAttribute("aria-selected", "false");
         }
 
+        const dayEvents = eventsForDate(date);
+        if (dayEvents.length > 0) {
+            const indicator = document.createElement("span");
+            indicator.className = "calendar-event-indicator";
+            indicator.textContent = dayEvents.length > 1 ? String(dayEvents.length) : "";
+            indicator.setAttribute("aria-hidden", "true");
+            button.appendChild(indicator);
+            button.setAttribute(
+                "aria-label",
+                `${fullDateFormatter.format(date)}, ${dayEvents.length} événement${dayEvents.length > 1 ? "s" : ""}`,
+            );
+        }
+
         button.addEventListener("click", () => {
             selectedCalendarDate = new Date(date);
-            if (date.getMonth() !== currentCalendarMonth.getMonth()
-                || date.getFullYear() !== currentCalendarMonth.getFullYear()) {
+            const monthChanged = (
+                date.getMonth() !== currentCalendarMonth.getMonth()
+                || date.getFullYear() !== currentCalendarMonth.getFullYear()
+            );
+            if (monthChanged) {
                 currentCalendarMonth = new Date(date.getFullYear(), date.getMonth(), 1);
             }
             renderCalendar();
+            if (monthChanged) {
+                loadCalendarEvents();
+            }
         });
 
         calendarGrid.appendChild(button);
     }
+    renderSelectedDateEvents();
 }
 
 function showCalendar() {
@@ -256,6 +384,7 @@ function showCalendar() {
     form.hidden = true;
     setActiveNavigation(calendarToggle);
     renderCalendar();
+    loadCalendarEvents();
 
     if (window.matchMedia("(max-width: 760px)").matches) {
         setSidebar(false);
@@ -1137,7 +1266,9 @@ calendarPrevious.addEventListener("click", () => {
         currentCalendarMonth.getMonth() - 1,
         1,
     );
+    selectedCalendarDate = new Date(currentCalendarMonth);
     renderCalendar();
+    loadCalendarEvents();
 });
 
 calendarNext.addEventListener("click", () => {
@@ -1146,13 +1277,16 @@ calendarNext.addEventListener("click", () => {
         currentCalendarMonth.getMonth() + 1,
         1,
     );
+    selectedCalendarDate = new Date(currentCalendarMonth);
     renderCalendar();
+    loadCalendarEvents();
 });
 
 calendarToday.addEventListener("click", () => {
     selectedCalendarDate = new Date(today);
     currentCalendarMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     renderCalendar();
+    loadCalendarEvents();
 });
 
 calendarUseDate.addEventListener("click", () => {

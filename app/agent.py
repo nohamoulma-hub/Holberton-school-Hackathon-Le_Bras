@@ -3,7 +3,9 @@ import logging
 import os
 import time
 import uuid
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import anthropic
 from dotenv import load_dotenv
@@ -22,6 +24,7 @@ MAX_TOOL_RESULT_CHARS = 6_000
 
 # low | medium | high | xhigh | max, réglable sans toucher au code, voir .env.example
 AGENT_EFFORT = os.environ.get("AGENT_EFFORT", "medium")
+DEFAULT_TIMEZONE = "Europe/Paris"
 
 SYSTEM_PROMPT = """Tu es LE BRAS, l'agent back-office d'une équipe. Un·e responsable d'équipe te donne une intention en langage naturel ; ton rôle est de la traduire en actions concrètes.
 
@@ -40,6 +43,34 @@ Ce que tu ne fais jamais :
 - Si l'outil normalement adapté à une demande n'est pas dans la liste des outils qui te sont fournis pour cet appel, ne cherche jamais un autre outil comme contournement pour arriver quand même à un résultat proche. Dis explicitement que cette action précise n'est pas disponible pour le moment, sans rien proposer ni exécuter à la place.
 
 Ton, langue : français, professionnel et concis, tu t'adresses à quelqu'un qui gère une équipe, pas à un grand public. N'utilise jamais le tiret cadratin « — » : préfère la virgule, le point, ou une phrase séparée."""
+
+
+def get_current_datetime() -> datetime:
+    """Retourne l'heure serveur dans le fuseau configuré au moment de la requête."""
+    timezone_name = os.environ.get("APP_TIMEZONE", DEFAULT_TIMEZONE)
+    try:
+        timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise RuntimeError(f"Fuseau horaire APP_TIMEZONE invalide : {timezone_name}") from exc
+    return datetime.now(timezone)
+
+
+def _temporal_context() -> str:
+    """Construit le contexte temporel ajouté au prompt sans modifier le prompt métier."""
+    current_datetime = get_current_datetime()
+    timezone_name = getattr(
+        current_datetime.tzinfo,
+        "key",
+        os.environ.get("APP_TIMEZONE", DEFAULT_TIMEZONE),
+    )
+    return (
+        "Contexte temporel actuel :\n"
+        f"- date actuelle : {current_datetime.date().isoformat()}\n"
+        f"- heure actuelle : {current_datetime.strftime('%H:%M:%S')}\n"
+        f"- fuseau horaire : {timezone_name}\n\n"
+        'Interprète toutes les expressions relatives comme "aujourd\'hui", "demain", '
+        '"dans N jours", "lundi" et "lundi prochain" par rapport à cette date.'
+    )
 
 
 def _serialize_tool_result(result: dict[str, Any]) -> str:
@@ -74,6 +105,7 @@ def run_agent(user_message: str) -> dict[str, Any]:
     """
     request_start = time.monotonic()
     plan_id = uuid.uuid4().hex
+    temporal_context = _temporal_context()
     create_plan(plan_id, user_message)
     action_index = 0
     input_tokens = 0
@@ -86,7 +118,10 @@ def run_agent(user_message: str) -> dict[str, Any]:
         response = client.messages.create(
             model="claude-opus-5",
             max_tokens=1024,
-            system=f"{SYSTEM_PROMPT}\n\nIdentifiant du plan courant : {plan_id}",
+            system=(
+                f"{SYSTEM_PROMPT}\n\n{temporal_context}\n\n"
+                f"Identifiant du plan courant : {plan_id}"
+            ),
             tools=active_tools,
             messages=messages,
             output_config={"effort": AGENT_EFFORT},
