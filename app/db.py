@@ -1,3 +1,4 @@
+import json
 import os
 
 import psycopg
@@ -182,20 +183,63 @@ def database_is_ready() -> bool:
         return False
 
 
-def get_recent_audit_log(limit: int = 20) -> list[dict]:
+def get_recent_audit_log(
+    limit: int = 20,
+    *,
+    user_id: int | None = None,
+    plan_ids: list[str] | None = None,
+) -> list[dict]:
+    """Retourne le journal visible par un compte ou par des plans anonymes connus."""
     safe_limit = max(1, min(limit, 100))
+    safe_plan_ids = list(dict.fromkeys(plan_ids or []))[:50]
+    if user_id is None and not safe_plan_ids:
+        return []
+
     conn = get_connection()
     try:
-        rows = conn.execute(
-            """
-            SELECT id, idempotency_key, tool_name, input_json, output_json, status, error,
-                   created_at
-            FROM audit_log
-            ORDER BY created_at DESC
-            LIMIT %s
-            """,
-            (safe_limit,),
-        ).fetchall()
-        return [dict(row) for row in rows]
+        if user_id is not None:
+            rows = conn.execute(
+                """
+                SELECT audit_log.id, audit_log.idempotency_key, audit_log.tool_name,
+                       audit_log.input_json, audit_log.output_json, audit_log.status,
+                       audit_log.error, audit_log.created_at,
+                       actions.id AS action_id, actions.plan_id,
+                       actions.status AS action_status
+                FROM audit_log
+                JOIN actions ON actions.idempotency_key = audit_log.idempotency_key
+                JOIN action_owners ON action_owners.action_id = actions.id
+                WHERE action_owners.user_id = %s
+                ORDER BY audit_log.created_at DESC
+                LIMIT %s
+                """,
+                (user_id, safe_limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT audit_log.id, audit_log.idempotency_key, audit_log.tool_name,
+                       audit_log.input_json, audit_log.output_json, audit_log.status,
+                       audit_log.error, audit_log.created_at,
+                       actions.id AS action_id, actions.plan_id,
+                       actions.status AS action_status
+                FROM audit_log
+                JOIN actions ON actions.idempotency_key = audit_log.idempotency_key
+                JOIN plans ON plans.id = actions.plan_id
+                WHERE plans.user_id IS NULL
+                  AND actions.plan_id = ANY(%s::text[])
+                ORDER BY audit_log.created_at DESC
+                LIMIT %s
+                """,
+                (safe_plan_ids, safe_limit),
+            ).fetchall()
     finally:
         conn.close()
+
+    calls = []
+    for row in rows:
+        item = dict(row)
+        item["input"] = json.loads(item.pop("input_json"))
+        output_json = item.pop("output_json")
+        item["output"] = json.loads(output_json) if output_json else None
+        calls.append(item)
+    return calls

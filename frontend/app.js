@@ -14,6 +14,7 @@ const currentConversationButton = document.getElementById("current-conversation"
 const calendarToggle = document.getElementById("calendar-toggle");
 const acceptedActionsToggle = document.getElementById("accepted-actions-toggle");
 const conversationHistoryToggle = document.getElementById("conversation-history-toggle");
+const auditLogToggle = document.getElementById("audit-log-toggle");
 const workspace = document.getElementById("workspace");
 const homeView = document.getElementById("home-view");
 const calendarView = document.getElementById("calendar-view");
@@ -44,6 +45,9 @@ const refreshActions = document.getElementById("refresh-actions");
 const conversationHistoryView = document.getElementById("conversation-history-view");
 const conversationHistoryList = document.getElementById("conversation-history-list");
 const refreshConversations = document.getElementById("refresh-conversations");
+const auditLogView = document.getElementById("audit-log-view");
+const auditLogList = document.getElementById("audit-log-list");
+const refreshAuditLog = document.getElementById("refresh-audit-log");
 const conversationView = document.getElementById("conversation-view");
 const conversationLog = document.getElementById("conversation-log");
 const form = document.getElementById("chat-form");
@@ -366,6 +370,7 @@ function setActiveNavigation(activeButton) {
         calendarToggle,
         acceptedActionsToggle,
         conversationHistoryToggle,
+        auditLogToggle,
     ].forEach((button) => {
         const isActive = button === activeButton;
         button.classList.toggle("active", isActive);
@@ -385,6 +390,7 @@ function hideWorkspaceViews() {
         profileView,
         acceptedActionsView,
         conversationHistoryView,
+        auditLogView,
         conversationView,
     ].forEach((view) => {
         view.hidden = true;
@@ -1453,6 +1459,92 @@ async function openConversationHistory() {
     await loadConversationHistory();
 }
 
+function auditStatus(status) {
+    return {
+        pending: {label: "En attente", message: "Cette action attend encore une validation."},
+        executing: {label: "En cours", message: "Cette action est en cours d’exécution."},
+        executed: {label: "Exécutée", message: "Cette action a été approuvée et exécutée."},
+        success: {label: "Exécutée", message: "Cette action a été approuvée et exécutée."},
+        rejected: {label: "Refusée", message: "Cette action a été refusée et n’a pas été exécutée."},
+        cancelled: {label: "Annulée", message: "L’effet de cette action a été annulé."},
+        error: {label: "Erreur", message: "L’exécution de cette action a échoué."},
+    }[status] || {label: status || "Inconnu", message: "Statut non reconnu."};
+}
+
+function renderAuditLog(calls) {
+    auditLogList.replaceChildren();
+    if (!Array.isArray(calls) || calls.length === 0) {
+        historyMessage(auditLogList, "history-empty", "Aucune action auditée pour le moment.");
+        return;
+    }
+
+    calls.forEach((call) => {
+        const status = call.action_status || call.status;
+        const statusContent = auditStatus(status);
+        const item = document.createElement("article");
+        item.className = "history-item audit-item";
+
+        const header = document.createElement("header");
+        header.className = "history-item-header";
+        const title = document.createElement("h2");
+        title.textContent = ACTION_TITLES[call.tool_name] || call.tool_name;
+        const date = document.createElement("time");
+        date.className = "history-date";
+        date.textContent = formatDateTime(call.created_at);
+        header.append(title, date);
+
+        const description = document.createElement("p");
+        description.textContent = statusContent.message;
+        const details = document.createElement("p");
+        details.className = "audit-input";
+        details.textContent = Object.entries(call.input || {})
+            .map(([key, value]) => `${FIELD_LABELS[key] || key} : ${formatUsefulValue(value, key)}`)
+            .join("\n");
+
+        const meta = document.createElement("div");
+        meta.className = "history-meta";
+        const values = [call.tool_name, `Action #${call.action_id}`];
+        if (call.plan_id) {
+            values.push(`Plan ${call.plan_id.slice(0, 8)}`);
+        }
+        values.forEach((value) => {
+            const badge = document.createElement("span");
+            badge.textContent = value;
+            meta.appendChild(badge);
+        });
+        const statusBadge = document.createElement("span");
+        statusBadge.className = `audit-status ${status}`;
+        statusBadge.textContent = statusContent.label;
+        meta.appendChild(statusBadge);
+
+        item.append(header, description, details, meta);
+        auditLogList.appendChild(item);
+    });
+}
+
+async function loadAuditLog() {
+    historyMessage(auditLogList, "history-loading", "Chargement du journal d’audit...");
+    try {
+        const parameters = new URLSearchParams({limit: "100"});
+        if (!currentUser) {
+            anonymousPlanIds().forEach((planId) => parameters.append("plan_id", planId));
+        }
+        const response = await fetch(`/trace?${parameters.toString()}`);
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || "Erreur du serveur");
+        }
+        renderAuditLog(data.calls);
+    } catch (error) {
+        historyMessage(auditLogList, "history-error", error.message);
+    }
+}
+
+async function openAuditLog() {
+    showManagementView(auditLogView, auditLogToggle);
+    await loadAuditLog();
+}
+
 menuToggle.addEventListener("click", toggleSidebar);
 sidebarBackdrop.addEventListener("click", () => setSidebar(false));
 
@@ -1530,8 +1622,10 @@ currentConversationButton.addEventListener("click", openCurrentConversation);
 calendarToggle.addEventListener("click", showCalendar);
 acceptedActionsToggle.addEventListener("click", openAcceptedActions);
 conversationHistoryToggle.addEventListener("click", openConversationHistory);
+auditLogToggle.addEventListener("click", openAuditLog);
 refreshActions.addEventListener("click", loadAcceptedActions);
 refreshConversations.addEventListener("click", loadConversationHistory);
+refreshAuditLog.addEventListener("click", loadAuditLog);
 
 calendarPrevious.addEventListener("click", () => {
     currentCalendarMonth = new Date(

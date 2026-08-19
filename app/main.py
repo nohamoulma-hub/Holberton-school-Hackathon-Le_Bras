@@ -221,10 +221,20 @@ def restore_plan(plan_id: str, request: Request) -> dict:
 
 
 @app.get("/trace")
-def trace(limit: int = 20) -> dict:
-    """Journal des derniers appels d'outils (idempotency_key, input, résultat/erreur), pour
-    montrer la séquence sans avoir besoin d'un print live."""
-    return {"calls": get_recent_audit_log(limit)}
+def trace(
+    request: Request,
+    limit: int = 20,
+    plan_id: list[str] = Query(default=[]),
+) -> dict:
+    """Journal d'audit limité au compte ou aux plans anonymes connus du navigateur."""
+    user = current_user(request, required=False)
+    return {
+        "calls": get_recent_audit_log(
+            limit,
+            user_id=user["id"] if user is not None else None,
+            plan_ids=plan_id,
+        )
+    }
 
 
 @app.get("/tools")

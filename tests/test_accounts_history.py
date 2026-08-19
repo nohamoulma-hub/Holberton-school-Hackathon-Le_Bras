@@ -85,6 +85,58 @@ class AccountsAndHistoryTestCase(unittest.TestCase):
         self.assertEqual(self.client.get("/history/conversations").status_code, 401)
         self.assertEqual(self.client.get("/history/accepted-actions").status_code, 401)
 
+    def test_audit_log_is_scoped_and_preserves_action_statuses(self):
+        first = self.client.post(
+            "/auth/register",
+            json={"email": "audit-first@example.com", "password": "mot-de-passe"},
+        ).json()["user"]
+        plans.create_plan("plan-audit-first", "Prépare deux actions", first["id"])
+        executed = tools.execute_tool(
+            "write_record",
+            {"record_type": "test", "subject": "Exécutée", "payload": {}},
+            plan_id="plan-audit-first",
+            action_index=0,
+        )
+        rejected = tools.execute_tool(
+            "send_message",
+            {"channel": "general", "recipient": "Équipe", "content": "Brouillon"},
+            plan_id="plan-audit-first",
+            action_index=1,
+        )
+        action_ids = [executed["result"]["action_id"], rejected["result"]["action_id"]]
+        history.link_actions_to_user(first["id"], [{"action_id": value} for value in action_ids])
+        tools.approve_pending_action(action_ids[0])
+        tools.reject_pending_action(action_ids[1])
+
+        audit = self.client.get("/trace").json()["calls"]
+        self.assertEqual({item["action_status"] for item in audit}, {"executed", "rejected"})
+        self.assertEqual({item["plan_id"] for item in audit}, {"plan-audit-first"})
+
+        self.client.post("/auth/logout")
+        self.client.post(
+            "/auth/register",
+            json={"email": "audit-second@example.com", "password": "mot-de-passe"},
+        )
+        self.assertEqual(self.client.get("/trace").json()["calls"], [])
+
+        self.client.post("/auth/logout")
+        plans.create_plan("plan-audit-anonymous", "Action locale")
+        tools.execute_tool(
+            "write_record",
+            {"record_type": "test", "subject": "Locale", "payload": {}},
+            plan_id="plan-audit-anonymous",
+        )
+        self.assertEqual(self.client.get("/trace").json()["calls"], [])
+        anonymous_audit = self.client.get(
+            "/trace?plan_id=plan-audit-anonymous"
+        ).json()["calls"]
+        self.assertEqual(len(anonymous_audit), 1)
+        self.assertEqual(anonymous_audit[0]["plan_id"], "plan-audit-anonymous")
+        self.assertEqual(
+            self.client.get("/trace?plan_id=plan-audit-first").json()["calls"],
+            [],
+        )
+
     def test_duplicate_email_and_short_password_are_rejected(self):
         payload = {"email": "duplicate@example.com", "password": "mot-de-passe"}
         self.assertEqual(self.client.post("/auth/register", json=payload).status_code, 200)

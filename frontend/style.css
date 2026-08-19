@@ -1223,6 +1223,31 @@ summary:focus-visible {
     border-radius: 999px;
 }
 
+.history-meta .audit-status.executed,
+.history-meta .audit-status.success {
+    color: var(--success);
+    background: var(--success-soft);
+}
+
+.history-meta .audit-status.rejected,
+.history-meta .audit-status.error {
+    color: var(--danger);
+    background: var(--danger-soft);
+}
+
+.history-meta .audit-status.pending,
+.history-meta .audit-status.executing {
+    color: var(--warning);
+    background: var(--warning-soft);
+}
+
+.audit-item .audit-input {
+    padding: 10px 12px;
+    font-size: 0.75rem;
+    background: var(--surface-muted);
+    border-radius: 10px;
+}
+
 .history-delete {
     margin-top: 14px;
     padding: 8px 11px;
