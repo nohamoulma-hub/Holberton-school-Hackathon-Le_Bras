@@ -46,3 +46,27 @@ Demandé à l'agent de compléter les cinq outils manquants (`write_record`, `ge
 Pour éviter l'exécution silencieuse d'effets de bord, le choix retenu est une protection minimale : Claude crée une action `pending`, puis le backend ne l'exécute qu'après approbation explicite ; un refus ne déclenche aucun outil. La lecture des actions en attente reste immédiate. L'undo ne cible que les actions locales exécutées et réversibles et ne peut pas être appliqué deux fois. Le frontend affiche une trace repliable avec outil, arguments, statut, résultat ou erreur et latence, ainsi que les boutons d'approbation et de refus.
 
 Tests effectués : 17 tests automatisés isolés couvrant les sept outils, la migration SQLite, les variantes de clé d'idempotence, approbation/refus, audit, erreur, undo, plusieurs `tool_use` et réponse sans outil ; construction Docker réussie ; vérification HTTP de `/health`, `/chat`, `/trace`, `/docs` et de l'interface. Des appels Claude réels ont aussi validé le hors périmètre (« Fais-moi un sandwich. »), une demande météo non anticipée, la question sur les capacités et une demande multi-outils restant en attente de validation.
+
+## Entrée 9 — 2026-08-19, cadrage du prompt système et effort du modèle
+
+Demandé à l'agent de reformuler le prompt système avec un cadre plus explicite (rôle, ce qu'il fait / ne fait jamais, ton) et de rendre l'effort du modèle réglable sans toucher au code. Résultat : `SYSTEM_PROMPT` restructuré en sections dans `app/agent.py` ; ajout de `AGENT_EFFORT` (low/medium/high/xhigh/max, défaut medium) lu depuis `.env` et passé en `output_config.effort` sur chaque appel.
+
+Deux problèmes trouvés et corrigés pendant les tests :
+- Le SDK Anthropic installé (0.68.0) ne supportait pas encore `output_config` : mis à jour vers 0.122.0.
+- Le fichier `.env` ne se terminait pas par un retour à la ligne, donc un ajout précédent (`AGENT_EFFORT=medium` via `>>`) s'était collé à la fin de la ligne de la clé API, la rendant invalide (401 côté Anthropic). Corrigé en séparant proprement les deux lignes.
+
+`AGENTS.md` mis à jour en conséquence (rôle/périmètre reformulés, nouvelle section Configuration).
+
+## Entrée 10 — 2026-08-19, comportement face à une demande vague
+
+Test manuel avec « Prépare l'arrivée de Jo » : l'agent posait 4 questions de clarification avant de proposer quoi que ce soit, ce qui ne correspond pas au happy path du SPEC (un plan d'actions affiché directement, à valider ou refuser). Décision prise avec l'utilisateur : l'agent doit toujours proposer un plan avec des valeurs par défaut explicites pour les champs manquants, plutôt que de bloquer sur des questions.
+
+Ajout dans `SYSTEM_PROMPT` : proposer directement le plan le plus raisonnable avec des valeurs par défaut signalées comme telles, et toujours remplir les champs requis (y compris le contenu rédigé d'un document ou d'un message) avec un brouillon plutôt que de les laisser vides. Retest : la même demande produit désormais un plan de 6 actions en attente, avec les valeurs par défaut clairement listées dans la réponse.
+
+Effet de bord observé (comportement stochastique du modèle, pas un bug de code) : sur certains runs, l'agent appelle un outil deux fois pour se corriger lui-même (un premier appel incomplet puis un second complet), et le signale explicitement à l'utilisateur en indiquant quelle action `pending` refuser. Accepté tel quel pour l'instant.
+
+## Entrée 11 — 2026-08-19, rendu Markdown de la réponse dans le frontend
+
+La réponse de l'agent contient du Markdown (gras, listes numérotées, tableaux) mais `app.js` l'affichait en texte brut (`textContent`), donc les `**...**` apparaissaient littéralement et les listes restaient sur une seule ligne. Demandé à l'agent de corriger l'affichage.
+
+Ajout d'un petit convertisseur Markdown maison dans `app.js` (gras, code, listes, tableaux), sans dépendance externe pour rester fiable même sans connexion internet pendant une démo. Le texte est échappé avant mise en forme pour éviter toute injection HTML. Le conteneur `<p id="agent-response">` dans `index.html` a dû devenir un `<div>`, un `<p>` ne pouvant pas légalement contenir des listes ou tableaux. Styles ajoutés dans `style.css` pour la lisibilité.
