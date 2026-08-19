@@ -2,7 +2,7 @@
 
 ## Le problème (5 lignes)
 
-De nombreuses situations d'équipe demandent d'accomplir manuellement une série de tâches dispersées sur plusieurs outils (arrivée d'un stagiaire, clôture d'un projet, préparation d'un événement, incident à traiter...), sans processus unifié. Résultat : oublis, doublons, tâches faites en retard ou pas faites du tout, et une exécution bâclée du cas à traiter. On propose un agent capable de transformer toute intention formulée en langage naturel et compatible avec les outils disponibles en un plan d’actions concrètes, quel que soit le cas de figure, en un plan d'actions concrètes touchant plusieurs systèmes, et de soumettre ce plan à validation humaine **action par action**, puis de n'exécuter que ce qui a été approuvé. Chaque exécution est journalisée de façon idempotente et annulable, pour qu'aucune action à effet de bord ne parte sans accord humain explicite et traçable. L'onboarding d'un stagiaire sert d'exemple de référence pour la démo, mais l'agent et ses outils restent conçus pour s'adapter à d'autres types de demandes.
+De nombreuses situations d'équipe demandent d'accomplir manuellement une série de tâches dispersées sur plusieurs outils (arrivée d'un stagiaire, clôture d'un projet, préparation d'un événement, incident à traiter...), sans processus unifié. Résultat : oublis, doublons, tâches faites en retard ou pas faites du tout, et une exécution bâclée du cas à traiter. On propose un agent capable de transformer toute intention formulée en langage naturel et compatible avec les outils disponibles en un plan d'actions concrètes touchant plusieurs systèmes, puis de soumettre ce plan à validation humaine **action par action** et de n'exécuter que ce qui a été approuvé. Chaque exécution est journalisée de façon idempotente et annulable, pour qu'aucune action à effet de bord ne parte sans accord humain explicite et traçable. L'onboarding d'un stagiaire sert d'exemple de référence pour la démo, mais l'agent et ses outils restent conçus pour s'adapter à d'autres types de demandes.
 
 ## User stories (3 max)
 
@@ -14,14 +14,14 @@ De nombreuses situations d'équipe demandent d'accomplir manuellement une série
 
 ## Hors scope (10 items)
 
-- Pas de vraie intégration API tierce en v1 : on utilise une base SQLite comme "issue tracker" et un faux service de messagerie qui écrit des fichiers `.md` dans un dossier `/outbox`, assumé et documenté dans le README, remplaçable par une vraie API plus tard sans changer l'interface `Tool`.
+- Pas de vraie intégration API tierce en v1 : on utilise PostgreSQL comme faux issue tracker et un faux service de messagerie qui écrit des fichiers `.md` dans un dossier `/outbox`, remplaçable par une vraie API plus tard sans changer l'interface `Tool`.
 - **Pas de gestion des conflits concurrents (deux validations simultanées sur le même plan) : on suppose un usage mono-utilisateur séquentiel, verrouillé par plan.** *(ligne candidate au bonus "non argumenté", voir plus bas)*
 - Pas de catalogue métier prédéfini par type de demande : la généralisation à plusieurs cas de figure repose sur le raisonnement du LLM combiné à un petit ensemble d'outils génériques, pas sur des templates codés en dur pour chaque scénario (onboarding, incident, événement...).
-- Pas de multi-utilisateurs / multi-organisation : un seul espace de travail partagé, pas d'authentification fine ni de rôles.
+- Pas de multi-organisation ni de gestion fine des rôles : les comptes locaux séparent leurs historiques, mais partagent la même instance.
 - Pas de fine-tuning ni d'entraînement de modèle : uniquement du prompt engineering + tool calling sur un LLM existant via API.
 - Pas de récurrence dans les actions programmées : le bonus "actions programmées dans le temps" couvre des actions ponctuelles différées, pas un cron avancé.
 - Pas d'undo multi-niveaux en MVP : seule la dernière action est annulable (bonus), pas de pile d'annulations en cascade.
-- Pas d'interface mobile : une interface web desktop simple (ou CLI) suffit pour la démo.
+- Pas d'application mobile native : l'interface web responsive couvre les écrans mobiles pour la démo.
 - Pas de génération de fichiers autres que texte/markdown : pas de PDF, pas d'images, pas de docx.
 - Pas de vérification métier du contenu (ex. vérifier que le stagiaire existe réellement en RH, que la salle est libre) : l'agent fait confiance aux informations fournies dans l'intention initiale.
 
@@ -29,15 +29,15 @@ De nombreuses situations d'équipe demandent d'accomplir manuellement une série
 
 ```mermaid
 flowchart LR
-    U[Utilisateur] -->|intention en langage naturel| FRONT[Front : UI d'approbation]
-    FRONT -->|POST /plan| API[Back : API orchestrateur]
-    API -->|prompt + tools disponibles| AGENT[Agent : planner LLM]
-    AGENT -->|plan structuré JSON| API
-    API -->|persiste plan, status=pending| DB[(SQLite\nplans / actions / audit_log)]
-    API -->|affiche le plan| FRONT
-    FRONT -->|approuve / refuse chaque action| API
-    API -->|met à jour status| DB
-    API -->|exécute uniquement les actions approuvées| EXEC[Executor]
+    U[Utilisateur] -->|intention en langage naturel| FRONT[Frontend HTML/CSS/JS responsive]
+    FRONT -->|POST /chat| API[FastAPI]
+    API -->|prompt + Tools actifs| AGENT[Claude Sonnet 5]
+    AGENT -->|tool_use| API
+    API -->|valide le schéma puis crée pending| DB[(PostgreSQL)]
+    API -->|réponse + trace + actions| FRONT
+    FRONT -->|POST approve / reject| API
+    API -->|met à jour le statut| DB
+    API -->|exécute uniquement après approve| EXEC[Executor]
     EXEC --> T1[Tool: create_issue]
     EXEC --> T2[Tool: send_message]
     EXEC --> T3[Tool: write_record]
@@ -47,14 +47,25 @@ flowchart LR
     T2 --> OUTBOX[/dossier outbox : faux service de messagerie/]
     T4 --> FILES[/dossier files : fichiers générés/]
     EXEC -->|log horodaté + idempotency_key| DB
-    DB -->|journal consultable| FRONT
+    DB -->|plan restauré après F5, calendrier, historiques| API
+    API --> FRONT
 ```
 
-- **Front** : interface web simple qui affiche le plan, un bouton approuver/refuser par action, et le journal d'audit.
+- **Front** : interface web responsive qui affiche le plan, un bouton approuver/refuser par action, la trace, le calendrier, le profil et les historiques.
 - **Back** : API qui orchestre agent, plan, validation et exécution, ne fait jamais confiance au front pour l'exécution réelle.
-- **Agent** : appelle le LLM avec la liste des tools disponibles, reçoit un plan structuré (pas d'exécution directe). Le même agent et les mêmes tools servent quel que soit le type d'intention reçue.
+- **Agent** : appelle Claude Sonnet 5 avec la liste des Tools disponibles et traite ses `tool_use`. Le même agent et les mêmes Tools servent quel que soit le type d'intention reçue.
 - **Outils** : chacun est un adaptateur générique avec effet de bord isolé, appelé uniquement par l'Executor après validation. Aucun tool n'est spécifique à un seul scénario métier.
-- **Stockage** : SQLite avec 4 tables clés : `plans`, `actions` (status: pending/approved/rejected/executed/cancelled + idempotency_key unique), `audit_log`, `records` (table générique pour les fiches créées par `write_record`, quel que soit leur type).
+- **Stockage** : PostgreSQL contient `users`, `sessions`, `plans`, `conversations`, `actions`, `action_owners`, `audit_log`, `issues`, `records` et `calendar_events`. Les plans utilisent `processing`, `pending`, `completed` ou `error` ; les actions utilisent `pending`, `executing`, `executed`, `rejected`, `error` ou `cancelled`.
+- **Persistance fichier** : les volumes Docker `files_data` et `outbox_data` conservent documents et messages lors d'une recréation du conteneur `app`.
+
+## Endpoints REST actuels
+
+- Chat et supervision : `POST /chat`, `GET /health`, `GET /trace`.
+- Validation : `POST /actions/{action_id}/approve`, `POST /actions/{action_id}/reject`.
+- Plans : `GET /plans/{plan_id}`, `GET /plans/latest`.
+- Outils : `GET /tools`, `POST /tools/{tool_name}/toggle`.
+- Comptes : `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`.
+- Historique et calendrier : `GET /history/conversations`, `GET /history/accepted-actions`, `GET /calendar/events`.
 
 ## Outils de l'agent
 
@@ -64,7 +75,7 @@ flowchart LR
 | `send_message` | `send_message(channel: str, recipient: str, content: str) -> MessageId` | **Oui** : écriture d'un fichier `.md` dans `/outbox/{channel}/` (faux service de messagerie) |
 | `write_record` | `write_record(record_type: str, subject: str, payload: dict) -> RecordId` | **Oui** : insertion dans la table générique `records` (`record_type` distingue onboarding, incident, événement...) |
 | `generate_document` | `generate_document(title: str, content: str, filename: str) -> FilePath` | **Oui** : génération et sauvegarde d'un fichier markdown sur disque, quel que soit son contenu |
-| `create_calendar_event` | `create_calendar_event(title: str, start: datetime, duration_min: int, attendees: list[str]) -> EventId` | **Oui** : insertion dans la table `calendar_events` (+ fichier `.ics` optionnel) |
+| `create_calendar_event` | `create_calendar_event(title: str, start: datetime, duration_min: int, attendees: list[str]) -> EventId` | **Oui** : insertion dans la table `calendar_events` |
 | `list_pending_actions` | `list_pending_actions(plan_id: str) -> list[Action]` | Non : lecture seule |
 | `undo_last_action` | `undo_last_action(action_id: str) -> bool` | **Oui** : compense/annule l'action précédente, idempotent |
 
@@ -86,7 +97,7 @@ Le scénario stagiaire ci-dessous sert de fil rouge pour la démo, mais le même
 
 - **Noham** : back (API orchestrateur), agent/planner (appel LLM + tool calling, capable de raisonner sur des intentions variées), gestion des doublons, journal d'audit + annulation.
 - **Jonathan** : front (UI d'approbation action par action), les 5 adaptateurs Tool génériques (issue/message/record/document/calendrier), rédaction README/AGENTS.md.
-- **En commun** : SPEC.md, schéma d'architecture, script de démo 5 min, tag `v1.0`.
+- **En commun** : SPEC.md, schéma d'architecture et script de démo de 3 minutes.
 
 ---
 **Carte bonus "Non argumenté" : ligne choisie**

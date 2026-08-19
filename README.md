@@ -4,13 +4,15 @@ LE BRAS est un prototype d'agent conversationnel développé dans le cadre d'un 
 
 ## État actuel — Palier 4
 
-Le Palier 3 est opérationnel :
+Le Palier 4 est opérationnel :
 
 - le frontend HTML/CSS/JavaScript est servi par FastAPI ;
 - `GET /health` permet de vérifier que le backend fonctionne ;
 - `POST /chat` transmet un message à Claude et renvoie sa réponse avec la trace des outils ;
 - le frontend appelle `/chat` sans URL de backend codée en dur ;
 - Claude choisit parmi sept outils via le Tool Calling natif Anthropic ;
+- l'agent utilise `claude-sonnet-5` et affiche un coût estimé à partir des tokens ;
+- les arguments des Tools sont validés avant toute création d'action en attente ;
 - les effets de bord sont idempotents, audités et mis en attente d'une validation humaine ;
 - le frontend permet d'approuver ou refuser chaque action en attente ;
 - les outils locaux réversibles peuvent être annulés une fois ;
@@ -48,6 +50,7 @@ conteneur dédié ; aucun conteneur frontend séparé n'est utilisé.
 │   ├── __init__.py
 │   ├── accounts.py
 │   ├── agent.py
+│   ├── calendar_events.py
 │   ├── db.py
 │   ├── history.py
 │   ├── main.py
@@ -61,6 +64,7 @@ conteneur dédié ; aucun conteneur frontend séparé n'est utilisé.
 │   ├── test_accounts_history.py
 │   ├── test_palier3.py
 │   ├── test_palier4_postgres.py
+│   ├── test_palier4_regressions.py
 │   └── postgres_test_case.py
 ├── .dockerignore
 ├── .env.example
@@ -153,12 +157,12 @@ Réponse :
   "trace": [],
   "plan_id": "...",
   "metrics": {
-    "input_tokens": 0,
-    "output_tokens": 0,
-    "total_tokens": 0,
-    "latency_ms": 0,
-    "estimated_cost": null,
-    "cost_status": "non_configured"
+    "input_tokens": 100,
+    "output_tokens": 50,
+    "total_tokens": 150,
+    "latency_ms": 123.4,
+    "estimated_cost": 0.00105,
+    "cost_status": "estimated"
   }
 }
 ```
@@ -231,8 +235,8 @@ La clé d'idempotence d'une action dépend de son `plan_id`, de son `action_inde
 
 Les intégrations sont locales pour ce hackathon : les comptes, historiques, plans, issues, records,
 événements et audits utilisent PostgreSQL ; la messagerie écrit des fichiers Markdown sous
-`outbox/` et les documents sont générés sous `files/`. PostgreSQL utilise le volume Docker
-`postgres_data`.
+`outbox/` et les documents sont générés sous `files/`. Les volumes Docker `postgres_data`,
+`outbox_data` et `files_data` conservent ces données après la recréation des conteneurs.
 
 L'ancien fichier `data.db` n'est ni importé ni supprimé automatiquement. Une base PostgreSQL vide
 est initialisée au démarrage avec toutes les tables nécessaires.
@@ -247,6 +251,7 @@ La vraie clé Anthropic doit être enregistrée uniquement dans le fichier local
 - FastAPI
 - Uvicorn
 - Anthropic SDK
+- Claude Sonnet 5
 - PostgreSQL 16
 - psycopg 3
 - HTML, CSS et JavaScript
@@ -258,6 +263,15 @@ La vraie clé Anthropic doit être enregistrée uniquement dans le fichier local
 Le conteneur `app` sert toujours le frontend et l'API. Le conteneur `db` isole PostgreSQL et son
 volume persistant. Le healthcheck empêche FastAPI de démarrer avant que la base soit prête, tout en
 conservant une seule commande de lancement.
+
+## Tests
+
+La suite comprend 43 tests, dont les régressions Palier 4 sur la validation avant `pending`, la
+boucle multi-tours, l'idempotence, la restauration après F5, le calendrier et le coût estimé :
+
+```bash
+docker compose run --rm app python -m unittest discover -s tests -v
+```
 
 ## Limites actuelles
 
