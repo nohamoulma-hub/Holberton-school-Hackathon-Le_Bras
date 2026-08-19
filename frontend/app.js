@@ -49,6 +49,7 @@ const sendButton = document.getElementById("send-button");
 const requestStatus = document.getElementById("request-status");
 
 const THEME_STORAGE_KEY = "le-bras-theme";
+const CURRENT_PLAN_STORAGE_KEY = "le-bras-current-plan";
 const today = new Date();
 today.setHours(0, 0, 0, 0);
 let currentCalendarMonth = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -422,6 +423,7 @@ function showConversation() {
 }
 
 function resetConversation() {
+    localStorage.removeItem(CURRENT_PLAN_STORAGE_KEY);
     conversationLog.replaceChildren();
     workspace.classList.remove("is-conversation", "is-calendar");
     hideWorkspaceViews();
@@ -739,6 +741,49 @@ function completeAgentMessage(agentView, data) {
     }
     agentView.bubble.appendChild(technicalTrace.element);
     scrollConversationToBottom();
+}
+
+function restoredPlanToAgentData(plan) {
+    return {
+        response: plan.response,
+        metrics: plan.metrics,
+        trace: (plan.actions || []).map((action) => ({
+            tool: action.tool,
+            input: action.input,
+            action_index: action.action_index,
+            action_id: action.action_id,
+            ok: action.status !== "error",
+            status: action.status,
+            output: action.output,
+            error: action.error,
+            latency_ms: 0,
+        })),
+    };
+}
+
+async function restoreCurrentPlan() {
+    const planId = localStorage.getItem(CURRENT_PLAN_STORAGE_KEY);
+    if (!planId) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/plans/${encodeURIComponent(planId)}`);
+        const plan = await response.json();
+        if (!response.ok) {
+            throw new Error(plan.detail || "Plan introuvable");
+        }
+
+        conversationLog.replaceChildren();
+        showConversation();
+        renderUserMessage(plan.user_request);
+        const agentView = renderAgentMessage();
+        completeAgentMessage(agentView, restoredPlanToAgentData(plan));
+        requestStatus.textContent = "Plan restauré";
+    } catch (error) {
+        localStorage.removeItem(CURRENT_PLAN_STORAGE_KEY);
+        console.warn("Impossible de restaurer le plan.", error);
+    }
 }
 
 function failAgentMessage(agentView, error) {
@@ -1170,6 +1215,9 @@ form.addEventListener("submit", async (event) => {
             throw new Error(data.detail || "Erreur du serveur");
         }
 
+        if (data.plan_id) {
+            localStorage.setItem(CURRENT_PLAN_STORAGE_KEY, data.plan_id);
+        }
         completeAgentMessage(agentView, data);
         requestStatus.textContent = "Réponse reçue";
     } catch (error) {
@@ -1186,3 +1234,4 @@ setSidebar(false);
 resizeMessageInput();
 loadCurrentUser();
 loadToolToggles();
+restoreCurrentPlan();

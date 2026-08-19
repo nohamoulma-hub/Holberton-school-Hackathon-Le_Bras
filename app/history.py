@@ -12,7 +12,8 @@ def save_conversation(user_id: int, message: str, agent_result: dict[str, Any]) 
             """
             INSERT INTO conversations
                 (user_id, plan_id, user_message, agent_response, metrics_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
             """,
             (
                 user_id,
@@ -20,11 +21,12 @@ def save_conversation(user_id: int, message: str, agent_result: dict[str, Any]) 
                 message,
                 agent_result.get("response", ""),
                 json.dumps(agent_result.get("metrics"), ensure_ascii=False),
-                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc),
             ),
         )
+        conversation_id = cursor.fetchone()["id"]
         conn.commit()
-        return cursor.lastrowid
+        return conversation_id
     finally:
         conn.close()
 
@@ -38,16 +40,18 @@ def link_actions_to_user(user_id: int, trace: list[dict[str, Any]]) -> None:
     action_ids.discard(None)
     if not action_ids:
         return
-    created_at = datetime.now(timezone.utc).isoformat()
+    created_at = datetime.now(timezone.utc)
     conn = get_connection()
     try:
-        conn.executemany(
-            """
-            INSERT OR IGNORE INTO action_owners (action_id, user_id, created_at)
-            VALUES (?, ?, ?)
-            """,
-            [(action_id, user_id, created_at) for action_id in action_ids],
-        )
+        with conn.cursor() as cursor:
+            cursor.executemany(
+                """
+                INSERT INTO action_owners (action_id, user_id, created_at)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (action_id) DO NOTHING
+                """,
+                [(action_id, user_id, created_at) for action_id in action_ids],
+            )
         conn.commit()
     finally:
         conn.close()
@@ -61,9 +65,9 @@ def list_conversations(user_id: int, limit: int = 50) -> list[dict[str, Any]]:
             """
             SELECT id, plan_id, user_message, agent_response, metrics_json, created_at
             FROM conversations
-            WHERE user_id = ?
+            WHERE user_id = %s
             ORDER BY created_at DESC
-            LIMIT ?
+            LIMIT %s
             """,
             (user_id, safe_limit),
         ).fetchall()
@@ -87,9 +91,9 @@ def list_accepted_actions(user_id: int, limit: int = 50) -> list[dict[str, Any]]
                    actions.output_json, actions.status, actions.created_at, actions.updated_at
             FROM action_owners
             JOIN actions ON actions.id = action_owners.action_id
-            WHERE action_owners.user_id = ? AND actions.status = 'executed'
+            WHERE action_owners.user_id = %s AND actions.status = 'executed'
             ORDER BY actions.updated_at DESC
-            LIMIT ?
+            LIMIT %s
             """,
             (user_id, safe_limit),
         ).fetchall()

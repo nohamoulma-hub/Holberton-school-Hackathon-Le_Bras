@@ -14,11 +14,11 @@ Le prompt système complet est défini dans `app/agent.py` (`SYSTEM_PROMPT`).
 
 ## Outils disponibles
 
-- `create_issue` : crée une tâche dans le faux issue tracker SQLite (`SIDE_EFFECT`).
+- `create_issue` : crée une tâche dans le faux issue tracker PostgreSQL (`SIDE_EFFECT`).
 - `send_message` : simule un envoi dans un fichier Markdown sous `outbox/` (`SIDE_EFFECT`).
-- `write_record` : enregistre une fiche générique dans SQLite (`SIDE_EFFECT`).
+- `write_record` : enregistre une fiche générique dans PostgreSQL (`SIDE_EFFECT`).
 - `generate_document` : génère un document Markdown sous `files/` (`SIDE_EFFECT`).
-- `create_calendar_event` : simule un événement de calendrier dans SQLite (`SIDE_EFFECT`).
+- `create_calendar_event` : simule un événement de calendrier dans PostgreSQL (`SIDE_EFFECT`).
 - `list_pending_actions` : consulte les actions en attente d'un plan (`READ_ONLY`).
 - `undo_last_action` : annule une action locale exécutée et réversible (`SIDE_EFFECT`).
 

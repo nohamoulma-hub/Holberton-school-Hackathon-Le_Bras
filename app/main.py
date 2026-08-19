@@ -18,13 +18,14 @@ from app.accounts import (
     delete_session,
     get_user_from_session,
 )
-from app.db import get_recent_audit_log, init_db
+from app.db import database_is_ready, get_recent_audit_log, init_db
 from app.history import (
     link_actions_to_user,
     list_accepted_actions,
     list_conversations,
     save_conversation,
 )
+from app.plans import assign_plan_to_user, get_latest_user_plan, get_plan
 from app.tools import (
     ToolError,
     approve_pending_action,
@@ -77,7 +78,9 @@ def set_session_cookie(response: Response, token: str) -> None:
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok"}
+    if not database_is_ready():
+        raise HTTPException(status_code=503, detail="PostgreSQL indisponible")
+    return {"status": "ok", "database": "ok"}
 
 
 @app.post("/chat")
@@ -89,6 +92,7 @@ def chat(body: ChatRequest, request: Request) -> dict:
     user = current_user(request, required=False)
     if user is not None:
         try:
+            assign_plan_to_user(result["plan_id"], user["id"])
             result["conversation_id"] = save_conversation(user["id"], body.message, result)
             link_actions_to_user(user["id"], result.get("trace", []))
         except Exception:
@@ -139,6 +143,28 @@ def conversation_history(request: Request, limit: int = 50) -> dict:
 def accepted_action_history(request: Request, limit: int = 50) -> dict:
     user = current_user(request)
     return {"actions": list_accepted_actions(user["id"], limit)}
+
+
+@app.get("/plans/latest")
+def latest_plan(request: Request) -> dict:
+    """Retrouve le dernier plan du compte connecté."""
+    user = current_user(request)
+    plan = get_latest_user_plan(user["id"])
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Aucun plan trouvé")
+    return plan
+
+
+@app.get("/plans/{plan_id}")
+def restore_plan(plan_id: str, request: Request) -> dict:
+    """Reconstruit un plan persistant et ses actions après un rechargement de page."""
+    plan = get_plan(plan_id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Plan introuvable")
+    user = current_user(request, required=False)
+    if plan["user_id"] is not None and (user is None or user["id"] != plan["user_id"]):
+        raise HTTPException(status_code=404, detail="Plan introuvable")
+    return plan
 
 
 @app.get("/trace")

@@ -5,6 +5,8 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from psycopg.errors import UniqueViolation
+
 from app.db import get_connection
 
 SESSION_COOKIE_NAME = "le_bras_session"
@@ -47,13 +49,14 @@ def create_user(email: str, password: str) -> dict[str, Any]:
     normalized_email = normalize_email(email)
     validated_password = validate_password(password)
     salt = secrets.token_bytes(16)
-    created_at = datetime.now(timezone.utc).isoformat()
+    created_at = datetime.now(timezone.utc)
     conn = get_connection()
     try:
         cursor = conn.execute(
             """
             INSERT INTO users (email, password_hash, password_salt, created_at)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
             """,
             (
                 normalized_email,
@@ -62,12 +65,12 @@ def create_user(email: str, password: str) -> dict[str, Any]:
                 created_at,
             ),
         )
+        user_id = cursor.fetchone()["id"]
         conn.commit()
-        return {"id": cursor.lastrowid, "email": normalized_email, "created_at": created_at}
-    except Exception as exc:
-        if "UNIQUE constraint failed" in str(exc):
-            raise AccountError("Un compte existe déjà avec cette adresse e-mail") from exc
-        raise
+        return {"id": user_id, "email": normalized_email, "created_at": created_at}
+    except UniqueViolation as exc:
+        conn.rollback()
+        raise AccountError("Un compte existe déjà avec cette adresse e-mail") from exc
     finally:
         conn.close()
 
@@ -81,7 +84,7 @@ def authenticate_user(email: str, password: str) -> dict[str, Any]:
             """
             SELECT id, email, password_hash, password_salt, created_at
             FROM users
-            WHERE email = ?
+            WHERE email = %s
             """,
             (normalized_email,),
         ).fetchone()
@@ -101,17 +104,17 @@ def create_session(user_id: int) -> str:
     now = datetime.now(timezone.utc)
     conn = get_connection()
     try:
-        conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (now.isoformat(),))
+        conn.execute("DELETE FROM sessions WHERE expires_at <= %s", (now,))
         conn.execute(
             """
             INSERT INTO sessions (user_id, token_hash, expires_at, created_at)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
             """,
             (
                 user_id,
                 token_hash,
-                (now + timedelta(days=SESSION_DURATION_DAYS)).isoformat(),
-                now.isoformat(),
+                now + timedelta(days=SESSION_DURATION_DAYS),
+                now,
             ),
         )
         conn.commit()
@@ -124,7 +127,7 @@ def get_user_from_session(token: str | None) -> dict[str, Any] | None:
     if not token:
         return None
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
     conn = get_connection()
     try:
         row = conn.execute(
@@ -132,7 +135,7 @@ def get_user_from_session(token: str | None) -> dict[str, Any] | None:
             SELECT users.id, users.email, users.created_at
             FROM sessions
             JOIN users ON users.id = sessions.user_id
-            WHERE sessions.token_hash = ? AND sessions.expires_at > ?
+            WHERE sessions.token_hash = %s AND sessions.expires_at > %s
             """,
             (token_hash, now),
         ).fetchone()
@@ -147,7 +150,7 @@ def delete_session(token: str | None) -> None:
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
     conn = get_connection()
     try:
-        conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
+        conn.execute("DELETE FROM sessions WHERE token_hash = %s", (token_hash,))
         conn.commit()
     finally:
         conn.close()

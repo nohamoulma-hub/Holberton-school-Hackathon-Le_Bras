@@ -1,28 +1,23 @@
-import tempfile
 import unittest
-from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app import accounts, db, history, tools
+from app import accounts, history, plans, tools
 from app.main import app
+from postgres_test_case import create_test_schema, drop_test_schema
 
 
 class AccountsAndHistoryTestCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.temporary_directory = tempfile.TemporaryDirectory()
-        self.original_db_path = db.DB_PATH
+        self.original_schema = create_test_schema()
         self.original_password_iterations = accounts.PASSWORD_ITERATIONS
-        db.DB_PATH = Path(self.temporary_directory.name) / "data.db"
         accounts.PASSWORD_ITERATIONS = 1_000
-        db.init_db()
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
         self.client.close()
-        db.DB_PATH = self.original_db_path
         accounts.PASSWORD_ITERATIONS = self.original_password_iterations
-        self.temporary_directory.cleanup()
+        drop_test_schema(self.original_schema)
 
     def test_register_profile_logout_and_login(self):
         register = self.client.post(
@@ -50,6 +45,7 @@ class AccountsAndHistoryTestCase(unittest.TestCase):
             json={"email": "history@example.com", "password": "mot-de-passe"},
         )
         user_id = register.json()["user"]["id"]
+        plans.create_plan("plan-history", "Prépare une fiche", user_id)
         history.save_conversation(
             user_id,
             "Prépare une fiche",

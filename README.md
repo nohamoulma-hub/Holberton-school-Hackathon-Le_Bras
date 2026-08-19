@@ -2,7 +2,7 @@
 
 LE BRAS est un prototype d'agent conversationnel développé dans le cadre d'un hackathon. L'utilisateur saisit une demande dans une interface web simple, puis le backend transmet cette demande à Claude via l'API Anthropic et affiche la réponse obtenue.
 
-## État actuel — Palier 3
+## État actuel — Palier 4
 
 Le Palier 3 est opérationnel :
 
@@ -17,9 +17,10 @@ Le Palier 3 est opérationnel :
 - les outils peuvent être activés ou désactivés depuis le menu Paramètre ;
 - les réponses de l'agent prennent en charge un rendu Markdown limité et sécurisé ;
 - un compte local permet d'afficher le profil et de conserver les historiques personnels ;
-- les conversations et actions acceptées sont enregistrées dans SQLite ;
+- les comptes, conversations, plans et actions sont enregistrés dans PostgreSQL ;
+- un plan et les statuts de ses actions sont restaurés après un rechargement de page ;
 - un calendrier interactif permet de sélectionner une date et de préparer une demande ;
-- l'ensemble de l'application fonctionne dans un seul conteneur Docker exposé sur le port `8000`.
+- Docker Compose lance FastAPI et PostgreSQL, FastAPI restant exposé sur le port `8000`.
 
 ## Architecture actuelle
 
@@ -33,10 +34,11 @@ Navigateur
     -> action en attente de validation
     -> Tool local après approbation
     -> tool_result et réponse affichés dans le frontend
-    -> historique SQLite associé au compte connecté
+    -> plan et historique PostgreSQL associés au compte connecté
 ```
 
-FastAPI sert à la fois l'API et les fichiers statiques du frontend. Aucun conteneur frontend séparé n'est utilisé.
+FastAPI sert à la fois l'API et les fichiers statiques du frontend. PostgreSQL utilise un second
+conteneur dédié ; aucun conteneur frontend séparé n'est utilisé.
 
 ## Structure du projet
 
@@ -49,6 +51,7 @@ FastAPI sert à la fois l'API et les fichiers statiques du frontend. Aucun conte
 │   ├── db.py
 │   ├── history.py
 │   ├── main.py
+│   ├── plans.py
 │   └── tools.py
 ├── frontend/
 │   ├── app.js
@@ -56,7 +59,9 @@ FastAPI sert à la fois l'API et les fichiers statiques du frontend. Aucun conte
 │   └── style.css
 ├── tests/
 │   ├── test_accounts_history.py
-│   └── test_palier3.py
+│   ├── test_palier3.py
+│   ├── test_palier4_postgres.py
+│   └── postgres_test_case.py
 ├── .dockerignore
 ├── .env.example
 ├── .gitignore
@@ -93,6 +98,9 @@ Ajoutez ensuite votre clé Anthropic dans `.env` :
 ```dotenv
 ANTHROPIC_API_KEY=votre_cle_anthropic
 ```
+
+Les valeurs PostgreSQL locales sont déjà documentées dans `.env.example`. Modifiez-les dans
+`.env` avant un déploiement partagé.
 
 Lancez l'application :
 
@@ -163,6 +171,19 @@ POST /actions/{action_id}/reject
 
 Le journal récent des appels d'outils est disponible avec `GET /trace`.
 
+### Plans persistants
+
+```text
+GET /plans/{plan_id}
+GET /plans/latest
+```
+
+`GET /plans/{plan_id}` reconstruit la demande, la réponse et toutes les actions dans leur ordre
+d'origine, avec leurs arguments, statuts, résultats et erreurs. Le frontend conserve uniquement le
+`plan_id` courant dans `localStorage` puis relit PostgreSQL après un rechargement.
+
+`GET /plans/latest` retourne le dernier plan du compte connecté.
+
 ### Compte et profil
 
 ```text
@@ -196,7 +217,13 @@ L'état d'un Tool est appliqué dès la demande suivante, sans redémarrer le se
 
 La clé d'idempotence d'une action dépend de son `plan_id`, de son `action_index`, du Tool et de ses arguments. Rejouer exactement la même action ne répète donc pas son effet, sans confondre deux plans ou deux positions différentes.
 
-Les intégrations sont locales pour ce hackathon : les comptes, historiques, issues, records, événements et audits utilisent SQLite ; la messagerie écrit des fichiers Markdown sous `outbox/` ; les documents sont générés sous `files/`. Le fichier SQLite est conservé dans le volume Docker `app_data` afin de survivre aux reconstructions de l'image.
+Les intégrations sont locales pour ce hackathon : les comptes, historiques, plans, issues, records,
+événements et audits utilisent PostgreSQL ; la messagerie écrit des fichiers Markdown sous
+`outbox/` et les documents sont générés sous `files/`. PostgreSQL utilise le volume Docker
+`postgres_data`.
+
+L'ancien fichier `data.db` n'est ni importé ni supprimé automatiquement. Une base PostgreSQL vide
+est initialisée au démarrage avec toutes les tables nécessaires.
 
 ## Variables d'environnement et sécurité
 
@@ -208,21 +235,24 @@ La vraie clé Anthropic doit être enregistrée uniquement dans le fichier local
 - FastAPI
 - Uvicorn
 - Anthropic SDK
-- SQLite
+- PostgreSQL 16
+- psycopg 3
 - HTML, CSS et JavaScript
 - Docker
 - Docker Compose
 
-## Pourquoi un seul conteneur au Palier 3 ?
+## Pourquoi deux conteneurs au Palier 4 ?
 
-FastAPI sert directement le frontend statique et l'API, tandis que SQLite est conservé dans un volume Docker persistant. Aucun service indépendant n'est nécessaire à ce stade. Un seul conteneur limite donc la configuration et permet de lancer toute l'application avec une seule commande. PostgreSQL pourra remplacer cette couche de stockage si les besoins de concurrence ou de déploiement multi-instance le justifient.
+Le conteneur `app` sert toujours le frontend et l'API. Le conteneur `db` isole PostgreSQL et son
+volume persistant. Le healthcheck empêche FastAPI de démarrer avant que la base soit prête, tout en
+conservant une seule commande de lancement.
 
 ## Limites actuelles
 
 Le projet ne propose pas encore :
 
-- de plan structuré ;
 - de véritables intégrations tierces pour les issues, messages ou calendriers ;
+- de migration automatique des anciennes données SQLite vers PostgreSQL ;
 - de récupération de mot de passe ou de vérification d'adresse e-mail ;
 - de gestion des validations concurrentes ;
 - d'annulation multi-niveaux.
