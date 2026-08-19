@@ -680,8 +680,21 @@ function renderTrace(trace, metrics) {
             toolName.textContent = `${index + 1}. ${step.tool}`;
             const status = document.createElement("span");
             status.textContent = ` : ${step.status || (step.ok ? "success" : "error")}`;
-            title.append(toolName, status, ` (${step.latency_ms} ms)`);
+            title.append(toolName, status);
+            if (typeof step.latency_ms === "number") {
+                title.append(` (${step.latency_ms} ms)`);
+            } else {
+                title.append(" (latence non disponible après restauration)");
+            }
             item.appendChild(title);
+
+            const identifiers = document.createElement("p");
+            identifiers.className = "request-metrics";
+            identifiers.textContent = [
+                `Action ID : ${step.action_id ?? "non applicable"}`,
+                `Index : ${step.action_index ?? "non disponible"}`,
+            ].join(" | ");
+            item.appendChild(identifiers);
 
             appendTechnicalValue(item, "Arguments", step.input);
             const output = appendTechnicalValue(
@@ -766,12 +779,71 @@ async function submitActionDecision(actionId, decision, view) {
             requestStatus.textContent = `Action ${actionId} refusée`;
         }
     } catch (error) {
-        view.errorElement.textContent = `Erreur : ${error.message}`;
-        view.approveButton.disabled = false;
-        view.rejectButton.disabled = false;
+        const synchronized = await synchronizeActionView(actionId, view, error.message);
+        if (!synchronized) {
+            view.errorElement.textContent = `Erreur : ${error.message}`;
+            view.approveButton.disabled = false;
+            view.rejectButton.disabled = false;
+        }
         requestStatus.textContent = `Erreur sur l'action ${actionId}`;
     } finally {
         view.inFlight = false;
+    }
+}
+
+function applyPersistedActionState(action, view) {
+    const status = normalizeStatus(action);
+    if (status === "pending") {
+        return false;
+    }
+
+    view.settled = true;
+    view.card.className = `action-card ${status}`;
+    view.statusElement.textContent = statusLabel(status);
+    view.resultElement.hidden = false;
+    view.approveButton.disabled = true;
+    view.rejectButton.disabled = true;
+    view.technicalView.status.textContent = ` : ${action.status}`;
+
+    const technicalLabel = view.technicalView.output.previousElementSibling;
+    if (status === "error") {
+        const message = action.error || "L'action a échoué.";
+        view.resultElement.textContent = message;
+        view.errorElement.textContent = `Erreur : ${message}`;
+        technicalLabel.textContent = "Erreur";
+        view.technicalView.output.textContent = message;
+    } else if (status === "rejected") {
+        view.resultElement.textContent = "Action refusée";
+        view.technicalView.output.textContent = "Action refusée";
+    } else {
+        view.resultElement.textContent = readableResult(action.output);
+        view.technicalView.output.textContent = formatJson(action.output);
+    }
+    return true;
+}
+
+async function synchronizeActionView(actionId, view, originalError) {
+    const planId = localStorage.getItem(CURRENT_PLAN_STORAGE_KEY);
+    if (!planId) {
+        return false;
+    }
+
+    try {
+        const response = await fetch(`/plans/${encodeURIComponent(planId)}`);
+        const plan = await response.json();
+        if (!response.ok) {
+            throw new Error(plan.detail || "Plan introuvable");
+        }
+        const action = (plan.actions || []).find(
+            (item) => String(item.action_id) === String(actionId),
+        );
+        return action ? applyPersistedActionState(action, view) : false;
+    } catch (synchronizationError) {
+        console.warn(
+            `Impossible de resynchroniser l'action après : ${originalError}`,
+            synchronizationError,
+        );
+        return false;
     }
 }
 
@@ -889,7 +961,7 @@ function restoredPlanToAgentData(plan) {
             status: action.status,
             output: action.output,
             error: action.error,
-            latency_ms: 0,
+            latency_ms: null,
         })),
     };
 }

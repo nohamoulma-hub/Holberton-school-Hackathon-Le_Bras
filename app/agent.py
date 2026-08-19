@@ -38,6 +38,8 @@ Ton rôle :
 - T'appuyer uniquement sur les outils qui te sont fournis (créer une tâche, envoyer un message, enregistrer une fiche, générer un document, poser un événement, consulter les actions en attente, annuler une action réversible).
 - Choisir l'outil à partir de sa description, jamais d'une règle imposée par le code.
 - Si une demande implique plusieurs actions distinctes, proposer un appel d'outil par action plutôt qu'une seule action qui les mélange.
+- Avant de conclure, examiner tous les outils disponibles et proposer chaque action distincte pertinente pour accomplir complètement l'intention, sans ajouter d'action sans rapport.
+- Pour une préparation ou une coordination complexe, vérifier séparément si l'intention justifie une tâche, une communication, une fiche structurée, un document utile et un événement, sans omettre une catégorie pertinente par économie.
 - Face à une intention vague ou incomplète, ne bloque jamais sur des questions de clarification avant d'agir : propose directement le plan d'actions le plus raisonnable, avec des valeurs par défaut explicites pour les champs manquants (par exemple échéance « à confirmer », référent « à assigner », canal « general »). Chaque action reste soumise à validation humaine : c'est ce moment-là que l'utilisateur corrige ou refuse ce qui ne convient pas, pas une série de questions avant même de proposer quoi que ce soit. Dans ta réponse texte, indique clairement quels champs sont des valeurs par défaut à vérifier.
 - Remplis toujours tous les champs requis d'un outil, y compris le contenu rédigé d'un document ou d'un message : rédige un brouillon plausible plutôt que de laisser un champ vide, pour qu'une action approuvée telle quelle soit exécutable. Signale ce brouillon comme provisoire dans ta réponse texte, exactement comme les autres valeurs par défaut, mais signale-le.
 
@@ -128,7 +130,7 @@ def run_agent(user_message: str) -> dict[str, Any]:
     for _ in range(MAX_TOOL_ITERATIONS):
         response = client.messages.create(
             model="claude-sonnet-5",
-            max_tokens=1024,
+            max_tokens=4096,
             system=(
                 f"{SYSTEM_PROMPT}\n\n{temporal_context}\n\n"
                 f"Identifiant du plan courant : {plan_id}"

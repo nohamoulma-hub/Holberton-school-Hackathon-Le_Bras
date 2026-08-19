@@ -26,6 +26,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - files_data:/app/files
+      - outbox_data:/app/outbox
 
 volumes:
   postgres_data:
+  files_data:
+  outbox_data:

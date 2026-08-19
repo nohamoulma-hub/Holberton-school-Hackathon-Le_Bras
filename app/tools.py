@@ -322,7 +322,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "create_issue",
         "description": (
-            "Propose la création d'une tâche dans le faux issue tracker SQLite. À utiliser pour "
+            "Propose la création d'une tâche dans le faux issue tracker PostgreSQL. À utiliser pour "
             "créer, suivre ou assigner une tâche concrète. Effet de bord : nécessite une "
             "validation humaine avant exécution. Retourne un identifiant d'issue après validation."
         ),
@@ -363,7 +363,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "write_record",
         "description": (
-            "Propose l'enregistrement d'une information métier générique dans SQLite, par exemple "
+            "Propose l'enregistrement d'une information métier générique dans PostgreSQL, par exemple "
             "une fiche d'onboarding, un incident ou un événement. Effet de bord : nécessite une "
             "validation humaine avant exécution."
         ),
@@ -402,7 +402,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "create_calendar_event",
         "description": (
-            "Propose la création simulée d'un événement de calendrier enregistré dans SQLite. "
+            "Propose la création simulée d'un événement de calendrier enregistré dans PostgreSQL. "
             "Effet de bord : nécessite une validation humaine avant exécution."
         ),
         "input_schema": {
@@ -467,6 +467,66 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 
 
 _TOOL_NAMES: frozenset[str] = frozenset(tool["name"] for tool in TOOL_DEFINITIONS)
+_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
+    tool["name"]: tool["input_schema"] for tool in TOOL_DEFINITIONS
+}
+
+
+def _validate_schema(value: Any, schema: dict[str, Any], path: str = "arguments") -> None:
+    """Valide récursivement le sous-ensemble JSON Schema utilisé par les Tools."""
+    expected_type = schema.get("type")
+    type_checks = {
+        "object": lambda item: isinstance(item, dict),
+        "array": lambda item: isinstance(item, list),
+        "string": lambda item: isinstance(item, str),
+        "integer": lambda item: isinstance(item, int) and not isinstance(item, bool),
+        "number": lambda item: isinstance(item, (int, float)) and not isinstance(item, bool),
+        "boolean": lambda item: isinstance(item, bool),
+    }
+    if expected_type in type_checks and not type_checks[expected_type](value):
+        raise ToolError(f"{path} doit être de type {expected_type}")
+
+    if expected_type == "object":
+        properties = schema.get("properties", {})
+        missing = [name for name in schema.get("required", []) if name not in value]
+        if missing:
+            raise ToolError(f"Champ requis manquant : {', '.join(missing)}")
+        if schema.get("additionalProperties") is False:
+            extras = sorted(set(value) - set(properties))
+            if extras:
+                raise ToolError(f"Champ supplémentaire interdit : {', '.join(extras)}")
+        for name, item in value.items():
+            if name in properties:
+                _validate_schema(item, properties[name], f"{path}.{name}")
+
+    if expected_type == "array" and "items" in schema:
+        for index, item in enumerate(value):
+            _validate_schema(item, schema["items"], f"{path}[{index}]")
+
+    if expected_type in {"integer", "number"}:
+        if "minimum" in schema and value < schema["minimum"]:
+            raise ToolError(f"{path} doit être supérieur ou égal à {schema['minimum']}")
+        if "maximum" in schema and value > schema["maximum"]:
+            raise ToolError(f"{path} doit être inférieur ou égal à {schema['maximum']}")
+
+    if expected_type == "string":
+        if "minLength" in schema and len(value) < schema["minLength"]:
+            raise ToolError(f"{path} est trop court")
+        if "maxLength" in schema and len(value) > schema["maxLength"]:
+            raise ToolError(f"{path} est trop long")
+        string_format = schema.get("format")
+        try:
+            if string_format == "date":
+                date.fromisoformat(value)
+            elif string_format == "date-time":
+                datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ToolError(f"{path} ne respecte pas le format {string_format}") from exc
+
+
+def _validate_tool_input(tool_name: str, tool_input: Any) -> None:
+    """Valide les arguments depuis la définition déclarative du Tool, sans l'exécuter."""
+    _validate_schema(tool_input, _TOOL_SCHEMAS[tool_name])
 
 # État en mémoire des outils désactivés (démo palier 3 : "je débranche un outil"), piloté
 # depuis le front sans redémarrer le serveur. Réinitialisé au démarrage à partir de
@@ -656,6 +716,13 @@ def execute_tool(
 
     if implementation is None:
         error = f"Outil inconnu : {tool_name}"
+        audit_id = _log_audit(idempotency_key, tool_name, tool_input, "error", error=error)
+        return {"ok": False, "error": error, "status": "error", "audit_id": audit_id}
+
+    try:
+        _validate_tool_input(tool_name, tool_input)
+    except ToolError as exc:
+        error = str(exc)
         audit_id = _log_audit(idempotency_key, tool_name, tool_input, "error", error=error)
         return {"ok": False, "error": error, "status": "error", "audit_id": audit_id}
 
