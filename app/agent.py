@@ -8,6 +8,7 @@ from typing import Any
 import anthropic
 from dotenv import load_dotenv
 
+from app.plans import create_plan, finalize_plan
 from app.tools import execute_tool, get_active_tool_definitions
 
 load_dotenv()
@@ -73,6 +74,7 @@ def run_agent(user_message: str) -> dict[str, Any]:
     """
     request_start = time.monotonic()
     plan_id = uuid.uuid4().hex
+    create_plan(plan_id, user_message)
     action_index = 0
     input_tokens = 0
     output_tokens = 0
@@ -98,12 +100,15 @@ def run_agent(user_message: str) -> dict[str, Any]:
         tool_use_blocks = [block for block in response.content if block.type == "tool_use"]
         if not tool_use_blocks:
             text = next((block.text for block in response.content if block.type == "text"), "")
-            return {
+            metrics = _metrics(input_tokens, output_tokens, request_start)
+            result = {
                 "response": text,
                 "trace": trace,
                 "plan_id": plan_id,
-                "metrics": _metrics(input_tokens, output_tokens, request_start),
+                "metrics": metrics,
             }
+            finalize_plan(plan_id, text, metrics)
+            return result
 
         tool_results = []
         for block in tool_use_blocks:
@@ -144,9 +149,13 @@ def run_agent(user_message: str) -> dict[str, Any]:
 
         messages.append({"role": "user", "content": tool_results})
 
-    return {
-        "response": "Trop d'itérations d'outils sans conclusion, j'arrête ici.",
+    text = "Trop d'itérations d'outils sans conclusion, j'arrête ici."
+    metrics = _metrics(input_tokens, output_tokens, request_start)
+    result = {
+        "response": text,
         "trace": trace,
         "plan_id": plan_id,
-        "metrics": _metrics(input_tokens, output_tokens, request_start),
+        "metrics": metrics,
     }
+    finalize_plan(plan_id, text, metrics)
+    return result

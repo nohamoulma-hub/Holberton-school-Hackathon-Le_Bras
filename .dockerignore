@@ -3,6 +3,9 @@
 venv/
 __pycache__/
 *.pyc
+*.db
 .git/
 .gitignore
 .DS_Store
+/outbox/
+/files/

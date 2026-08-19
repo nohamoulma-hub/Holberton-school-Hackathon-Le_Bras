@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from app.db import get_connection
+from app.plans import ensure_plan, refresh_plan_status
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 OUTBOX_DIR = PROJECT_DIR / "outbox"
@@ -71,7 +72,7 @@ def _safe_markdown_path(filename: str) -> Path:
 def create_issue(
     title: str, description: str, assignee: str, due_date: date | str
 ) -> dict:
-    """Insère une issue dans SQLite, qui simule un issue tracker local."""
+    """Insère une issue dans PostgreSQL, qui simule un issue tracker local."""
     title = _required_text(title, "title", 200)
     description = _required_text(description, "description")
     assignee = _required_text(assignee, "assignee", 200)
@@ -89,17 +90,18 @@ def create_issue(
     try:
         cursor = conn.execute(
             "INSERT INTO issues (title, description, assignee, due_date, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
             (
                 title,
                 description,
                 assignee,
                 parsed_due_date.isoformat(),
-                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc),
             ),
         )
+        issue_id = cursor.fetchone()["id"]
         conn.commit()
-        return {"issue_id": cursor.lastrowid}
+        return {"issue_id": issue_id}
     finally:
         conn.close()
 
@@ -120,7 +122,7 @@ def send_message(channel: str, recipient: str, content: str) -> dict:
 
 
 def write_record(record_type: str, subject: str, payload: dict[str, Any]) -> dict:
-    """Enregistre une fiche métier générique dans la table SQLite `records`."""
+    """Enregistre une fiche métier générique dans la table PostgreSQL `records`."""
     record_type = _required_text(record_type, "record_type", 100)
     subject = _required_text(subject, "subject", 300)
     if not isinstance(payload, dict):
@@ -137,12 +139,14 @@ def write_record(record_type: str, subject: str, payload: dict[str, Any]) -> dic
         cursor = conn.execute(
             """
             INSERT INTO records (record_type, subject, payload_json, created_at)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
             """,
-            (record_type, subject, payload_json, datetime.now(timezone.utc).isoformat()),
+            (record_type, subject, payload_json, datetime.now(timezone.utc)),
         )
+        record_id = cursor.fetchone()["id"]
         conn.commit()
-        return {"record_id": cursor.lastrowid}
+        return {"record_id": record_id}
     finally:
         conn.close()
 
@@ -162,7 +166,7 @@ def generate_document(title: str, content: str, filename: str) -> dict:
 def create_calendar_event(
     title: str, start: datetime | str, duration_min: int, attendees: list[str]
 ) -> dict:
-    """Simule un calendrier en enregistrant un événement dans SQLite."""
+    """Simule un calendrier en enregistrant un événement dans PostgreSQL."""
     title = _required_text(title, "title", 300)
     if isinstance(start, datetime):
         parsed_start = start
@@ -187,18 +191,20 @@ def create_calendar_event(
             """
             INSERT INTO calendar_events
                 (title, start, duration_min, attendees_json, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
             """,
             (
                 title,
                 parsed_start.isoformat(),
                 duration_min,
                 json.dumps(cleaned_attendees, ensure_ascii=False),
-                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc),
             ),
         )
+        event_id = cursor.fetchone()["id"]
         conn.commit()
-        return {"event_id": cursor.lastrowid}
+        return {"event_id": event_id}
     finally:
         conn.close()
 
@@ -212,7 +218,7 @@ def list_pending_actions(plan_id: str) -> list[dict[str, Any]]:
             """
             SELECT id, action_index, tool_name, input_json, status, created_at
             FROM actions
-            WHERE plan_id = ? AND status = 'pending'
+            WHERE plan_id = %s AND status = 'pending'
             ORDER BY id ASC
             LIMIT 50
             """,
@@ -255,7 +261,7 @@ def undo_last_action(action_id: str) -> dict:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT tool_name, output_json, status FROM actions WHERE id = ?",
+            "SELECT tool_name, output_json, status FROM actions WHERE id = %s",
             (parsed_action_id,),
         ).fetchone()
         if row is None:
@@ -269,27 +275,27 @@ def undo_last_action(action_id: str) -> dict:
 
         output = json.loads(row["output_json"] or "{}")
         if row["tool_name"] == "create_issue":
-            cursor = conn.execute("DELETE FROM issues WHERE id = ?", (output.get("issue_id"),))
+            cursor = conn.execute("DELETE FROM issues WHERE id = %s", (output.get("issue_id"),))
             if cursor.rowcount != 1:
                 raise ToolError("L'issue à annuler n'existe plus")
         elif row["tool_name"] == "send_message":
             _remove_generated_file(output.get("path", ""), OUTBOX_DIR)
         elif row["tool_name"] == "write_record":
-            cursor = conn.execute("DELETE FROM records WHERE id = ?", (output.get("record_id"),))
+            cursor = conn.execute("DELETE FROM records WHERE id = %s", (output.get("record_id"),))
             if cursor.rowcount != 1:
                 raise ToolError("Le record à annuler n'existe plus")
         elif row["tool_name"] == "generate_document":
             _remove_generated_file(output.get("path", ""), FILES_DIR)
         elif row["tool_name"] == "create_calendar_event":
             cursor = conn.execute(
-                "DELETE FROM calendar_events WHERE id = ?", (output.get("event_id"),)
+                "DELETE FROM calendar_events WHERE id = %s", (output.get("event_id"),)
             )
             if cursor.rowcount != 1:
                 raise ToolError("L'événement à annuler n'existe plus")
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
         conn.execute(
-            "UPDATE actions SET status = 'cancelled', updated_at = ? WHERE id = ?",
+            "UPDATE actions SET status = 'cancelled', updated_at = %s WHERE id = %s",
             (now, parsed_action_id),
         )
         conn.commit()
@@ -521,7 +527,7 @@ def _get_cached_result(idempotency_key: str) -> tuple[Any, int] | None:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT id, output_json, status FROM audit_log WHERE idempotency_key = ?",
+            "SELECT id, output_json, status FROM audit_log WHERE idempotency_key = %s",
             (idempotency_key,),
         ).fetchone()
     finally:
@@ -546,14 +552,14 @@ def _log_audit(
             """
             INSERT INTO audit_log
                 (idempotency_key, tool_name, input_json, output_json, status, error, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(idempotency_key) DO UPDATE SET
-                tool_name = excluded.tool_name,
-                input_json = excluded.input_json,
-                output_json = excluded.output_json,
-                status = excluded.status,
-                error = excluded.error,
-                created_at = excluded.created_at
+                tool_name = EXCLUDED.tool_name,
+                input_json = EXCLUDED.input_json,
+                output_json = EXCLUDED.output_json,
+                status = EXCLUDED.status,
+                error = EXCLUDED.error,
+                created_at = EXCLUDED.created_at
             """,
             (
                 idempotency_key,
@@ -562,11 +568,11 @@ def _log_audit(
                 json.dumps(output, ensure_ascii=False) if output is not None else None,
                 status,
                 error,
-                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc),
             ),
         )
         audit_id = conn.execute(
-            "SELECT id FROM audit_log WHERE idempotency_key = ?", (idempotency_key,)
+            "SELECT id FROM audit_log WHERE idempotency_key = %s", (idempotency_key,)
         ).fetchone()["id"]
         conn.commit()
         return audit_id
@@ -582,15 +588,18 @@ def _queue_pending_action(
     idempotency_key: str,
 ) -> dict[str, Any]:
     """Enregistre une proposition d'effet de bord sans l'exécuter."""
-    now = datetime.now(timezone.utc).isoformat()
+    ensure_plan(plan_id)
+    now = datetime.now(timezone.utc)
     conn = get_connection()
     try:
         cursor = conn.execute(
             """
-            INSERT OR IGNORE INTO actions
+            INSERT INTO actions
                 (plan_id, action_index, tool_name, input_json, status, idempotency_key,
                  created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)
+            VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s)
+            ON CONFLICT (idempotency_key) DO NOTHING
+            RETURNING id
             """,
             (
                 plan_id,
@@ -602,11 +611,12 @@ def _queue_pending_action(
                 now,
             ),
         )
+        inserted = cursor.fetchone()
         row = conn.execute(
             """
             SELECT id, plan_id, action_index, status, output_json, error
             FROM actions
-            WHERE idempotency_key = ?
+            WHERE idempotency_key = %s
             """,
             (idempotency_key,),
         ).fetchone()
@@ -618,7 +628,7 @@ def _queue_pending_action(
         "plan_id": row["plan_id"],
         "action_index": row["action_index"],
         "status": row["status"],
-        "_created": cursor.rowcount == 1,
+        "_created": inserted is not None,
     }
     if row["output_json"]:
         result["result"] = json.loads(row["output_json"])
@@ -716,7 +726,21 @@ def approve_pending_action(action_id: int) -> dict[str, Any]:
     """Vérifie puis exécute une action explicitement approuvée par l'utilisateur."""
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM actions WHERE id = ?", (action_id,)).fetchone()
+        row = conn.execute(
+            """
+            UPDATE actions
+            SET status = 'executing', updated_at = %s
+            WHERE id = %s AND status = 'pending'
+            RETURNING *
+            """,
+            (datetime.now(timezone.utc), action_id),
+        ).fetchone()
+        if row is None:
+            row = conn.execute(
+                "SELECT * FROM actions WHERE id = %s",
+                (action_id,),
+            ).fetchone()
+        conn.commit()
     finally:
         conn.close()
     if row is None:
@@ -728,7 +752,7 @@ def approve_pending_action(action_id: int) -> dict[str, Any]:
             "result": json.loads(row["output_json"] or "{}"),
             "idempotent_replay": True,
         }
-    if row["status"] != "pending":
+    if row["status"] != "executing":
         return {"ok": False, "error": f"L'action est déjà {row['status']}"}
 
     tool_input = json.loads(row["input_json"])
@@ -739,14 +763,14 @@ def approve_pending_action(action_id: int) -> dict[str, Any]:
         action_index=row["action_index"],
         approved=True,
     )
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
     conn = get_connection()
     try:
         conn.execute(
             """
             UPDATE actions
-            SET status = ?, output_json = ?, error = ?, updated_at = ?
-            WHERE id = ? AND status = 'pending'
+            SET status = %s, output_json = %s, error = %s, updated_at = %s
+            WHERE id = %s AND status = 'executing'
             """,
             (
                 "executed" if result["ok"] else "error",
@@ -761,6 +785,7 @@ def approve_pending_action(action_id: int) -> dict[str, Any]:
         conn.commit()
     finally:
         conn.close()
+    refresh_plan_status(row["plan_id"])
     return {**result, "action_id": action_id, "status": "executed" if result["ok"] else "error"}
 
 
@@ -768,14 +793,14 @@ def reject_pending_action(action_id: int) -> dict[str, Any]:
     """Refuse une action en attente sans jamais appeler son implémentation."""
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM actions WHERE id = ?", (action_id,)).fetchone()
+        row = conn.execute("SELECT * FROM actions WHERE id = %s", (action_id,)).fetchone()
         if row is None:
             return {"ok": False, "error": f"Action introuvable : {action_id}"}
         if row["status"] != "pending":
             return {"ok": False, "error": f"L'action est déjà {row['status']}"}
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
         conn.execute(
-            "UPDATE actions SET status = 'rejected', updated_at = ? WHERE id = ?",
+            "UPDATE actions SET status = 'rejected', updated_at = %s WHERE id = %s",
             (now, action_id),
         )
         conn.commit()
@@ -786,4 +811,5 @@ def reject_pending_action(action_id: int) -> dict[str, Any]:
     _log_audit(
         row["idempotency_key"], row["tool_name"], tool_input, "rejected", error="Action refusée"
     )
+    refresh_plan_status(row["plan_id"])
     return {"ok": True, "action_id": action_id, "status": "rejected"}

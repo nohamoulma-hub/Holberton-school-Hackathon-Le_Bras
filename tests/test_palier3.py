@@ -8,27 +8,26 @@ from unittest.mock import patch
 os.environ.setdefault("ANTHROPIC_API_KEY", "test")
 
 from app import db, tools
+from postgres_test_case import create_test_schema, drop_test_schema
 
 
 class Palier3TestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.project_dir = Path(self.temporary_directory.name)
-        self.original_db_path = db.DB_PATH
+        self.original_schema = create_test_schema()
         self.original_project_dir = tools.PROJECT_DIR
         self.original_outbox_dir = tools.OUTBOX_DIR
         self.original_files_dir = tools.FILES_DIR
-        db.DB_PATH = self.project_dir / "data.db"
         tools.PROJECT_DIR = self.project_dir
         tools.OUTBOX_DIR = self.project_dir / "outbox"
         tools.FILES_DIR = self.project_dir / "files"
-        db.init_db()
 
     def tearDown(self) -> None:
-        db.DB_PATH = self.original_db_path
         tools.PROJECT_DIR = self.original_project_dir
         tools.OUTBOX_DIR = self.original_outbox_dir
         tools.FILES_DIR = self.original_files_dir
+        drop_test_schema(self.original_schema)
         self.temporary_directory.cleanup()
 
     def queue_and_approve(
@@ -62,47 +61,37 @@ class Palier3TestCase(unittest.TestCase):
         self.assertEqual(set(tools.TOOL_IMPLEMENTATIONS), expected)
         self.assertEqual({definition["name"] for definition in tools.TOOL_DEFINITIONS}, expected)
 
-    def test_existing_actions_table_is_migrated_without_data_loss(self):
-        db.DB_PATH = self.project_dir / "legacy.db"
-        conn = db.get_connection()
-        conn.execute(
-            """
-            CREATE TABLE actions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                plan_id TEXT NOT NULL,
-                tool_name TEXT NOT NULL,
-                input_json TEXT NOT NULL,
-                status TEXT NOT NULL,
-                idempotency_key TEXT UNIQUE NOT NULL,
-                output_json TEXT,
-                error TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-            """
-        )
-        conn.execute(
-            """
-            INSERT INTO actions
-                (plan_id, tool_name, input_json, status, idempotency_key, created_at, updated_at)
-            VALUES ('ancien-plan', 'write_record', '{}', 'pending', 'ancienne-cle', 'date', 'date')
-            """
-        )
-        conn.commit()
-        conn.close()
-
+    def test_init_db_is_idempotent_and_creates_the_postgres_schema(self):
+        db.init_db()
         db.init_db()
         conn = db.get_connection()
-        columns = {
-            row["name"] for row in conn.execute("PRAGMA table_info(actions)").fetchall()
-        }
-        row = conn.execute(
-            "SELECT plan_id, action_index FROM actions WHERE idempotency_key = 'ancienne-cle'"
-        ).fetchone()
-        conn.close()
-        self.assertIn("action_index", columns)
-        self.assertEqual(row["plan_id"], "ancien-plan")
-        self.assertEqual(row["action_index"], 1)
+        try:
+            tables = {
+                row["table_name"]
+                for row in conn.execute(
+                    """
+                    SELECT table_name
+                    FROM information_schema.tables
+                    WHERE table_schema = current_schema()
+                    """
+                ).fetchall()
+            }
+        finally:
+            conn.close()
+        self.assertTrue(
+            {
+                "users",
+                "sessions",
+                "plans",
+                "conversations",
+                "actions",
+                "action_owners",
+                "audit_log",
+                "issues",
+                "records",
+                "calendar_events",
+            }.issubset(tables)
+        )
 
     def test_identical_actions_in_different_plans_are_distinct(self):
         tool_input = {
@@ -162,7 +151,7 @@ class Palier3TestCase(unittest.TestCase):
         )
         self.assertTrue(executed_replay["idempotent_replay"])
         conn = db.get_connection()
-        self.assertEqual(conn.execute("SELECT COUNT(*) FROM issues").fetchone()[0], 1)
+        self.assertEqual(conn.execute("SELECT COUNT(*) AS total FROM issues").fetchone()["total"], 1)
         conn.close()
 
     def test_approving_the_same_action_twice_has_one_effect(self):
@@ -178,7 +167,7 @@ class Palier3TestCase(unittest.TestCase):
         self.assertTrue(first["ok"])
         self.assertTrue(replay["idempotent_replay"])
         conn = db.get_connection()
-        self.assertEqual(conn.execute("SELECT COUNT(*) FROM records").fetchone()[0], 1)
+        self.assertEqual(conn.execute("SELECT COUNT(*) AS total FROM records").fetchone()["total"], 1)
         conn.close()
 
     def test_side_effect_waits_for_approval_and_is_idempotent(self):
@@ -191,7 +180,7 @@ class Palier3TestCase(unittest.TestCase):
         proposed = tools.execute_tool("create_issue", tool_input, plan_id="plan-onboarding")
         action_id = proposed["result"]["action_id"]
         conn = db.get_connection()
-        self.assertEqual(conn.execute("SELECT COUNT(*) FROM issues").fetchone()[0], 0)
+        self.assertEqual(conn.execute("SELECT COUNT(*) AS total FROM issues").fetchone()["total"], 0)
         conn.close()
         self.assertEqual(len(tools.list_pending_actions("plan-onboarding")), 1)
 
@@ -200,7 +189,7 @@ class Palier3TestCase(unittest.TestCase):
         self.assertTrue(first["ok"])
         self.assertTrue(second["idempotent_replay"])
         conn = db.get_connection()
-        self.assertEqual(conn.execute("SELECT COUNT(*) FROM issues").fetchone()[0], 1)
+        self.assertEqual(conn.execute("SELECT COUNT(*) AS total FROM issues").fetchone()["total"], 1)
         conn.close()
 
     def test_send_message(self):
@@ -252,7 +241,7 @@ class Palier3TestCase(unittest.TestCase):
         result = tools.reject_pending_action(proposed["result"]["action_id"])
         self.assertTrue(result["ok"])
         conn = db.get_connection()
-        self.assertEqual(conn.execute("SELECT COUNT(*) FROM records").fetchone()[0], 0)
+        self.assertEqual(conn.execute("SELECT COUNT(*) AS total FROM records").fetchone()["total"], 0)
         conn.close()
 
     def test_undo_reversible_action_once(self):
@@ -266,9 +255,9 @@ class Palier3TestCase(unittest.TestCase):
         self.assertTrue(undone["result"]["undone"])
         self.assertTrue(tools.approve_pending_action(undo_action_id)["idempotent_replay"])
         conn = db.get_connection()
-        self.assertEqual(conn.execute("SELECT COUNT(*) FROM records").fetchone()[0], 0)
+        self.assertEqual(conn.execute("SELECT COUNT(*) AS total FROM records").fetchone()["total"], 0)
         status = conn.execute(
-            "SELECT status FROM actions WHERE id = ?", (target_action_id,)
+            "SELECT status FROM actions WHERE id = %s", (target_action_id,)
         ).fetchone()["status"]
         conn.close()
         self.assertEqual(status, "cancelled")
@@ -284,7 +273,9 @@ class Palier3TestCase(unittest.TestCase):
         self.assertFalse(unknown["ok"])
         conn = db.get_connection()
         self.assertEqual(
-            conn.execute("SELECT COUNT(*) FROM audit_log WHERE status = 'error'").fetchone()[0],
+            conn.execute(
+                "SELECT COUNT(*) AS total FROM audit_log WHERE status = 'error'"
+            ).fetchone()["total"],
             2,
         )
         conn.close()
@@ -375,7 +366,7 @@ class Palier3TestCase(unittest.TestCase):
             result = agent.run_agent("Que peux-tu faire ?")
         self.assertEqual(result["trace"], [])
         self.assertIn("outils", result["response"])
-        self.assertIn("Cette demande ne fait pas partie", agent.SYSTEM_PROMPT)
+        self.assertIn("ce n'est pas une action disponible", agent.SYSTEM_PROMPT)
 
 
 if __name__ == "__main__":

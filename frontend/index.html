@@ -1,49 +1,346 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Le Bras</title>
+    <meta name="color-scheme" content="light dark">
+    <title>LE BRAS - Assistant opérationnel</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <main class="container">
-        <h1>LE BRAS</h1>
+    <svg class="svg-sprite" aria-hidden="true">
+        <symbol id="icon-menu" viewBox="0 0 24 24">
+            <path d="M4 6h16M4 12h16M4 18h16"/>
+        </symbol>
+        <symbol id="icon-user" viewBox="0 0 24 24">
+            <circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/>
+        </symbol>
+        <symbol id="icon-login" viewBox="0 0 24 24">
+            <path d="M14 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2v-3M10 12h11M18 9l3 3-3 3"/>
+        </symbol>
+        <symbol id="icon-chat" viewBox="0 0 24 24">
+            <path d="M20 15a4 4 0 0 1-4 4H9l-5 3v-6a7 7 0 0 1-1-4c0-4.4 3.8-8 8.5-8S20 7.6 20 12v3Z"/>
+            <path d="M8 12h.01M12 12h.01M16 12h.01"/>
+        </symbol>
+        <symbol id="icon-calendar" viewBox="0 0 24 24">
+            <rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>
+        </symbol>
+        <symbol id="icon-check" viewBox="0 0 24 24">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><path d="m7 12 3 3 7-7"/>
+        </symbol>
+        <symbol id="icon-history" viewBox="0 0 24 24">
+            <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/>
+        </symbol>
+        <symbol id="icon-settings" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/>
+        </symbol>
+        <symbol id="icon-sun" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+        </symbol>
+        <symbol id="icon-moon" viewBox="0 0 24 24">
+            <path d="M20 15.3A8.5 8.5 0 0 1 8.7 4a8.5 8.5 0 1 0 11.3 11.3Z"/>
+        </symbol>
+        <symbol id="icon-arrow" viewBox="0 0 24 24">
+            <path d="M5 12h14M14 7l5 5-5 5"/>
+        </symbol>
+        <symbol id="icon-spark" viewBox="0 0 24 24">
+            <path d="m8 5 11 7-11 7V5Z"/>
+        </symbol>
+    </svg>
 
-        <p>Décris ce que tu veux faire.</p>
+    <div class="app-shell" id="app-shell">
+        <aside class="sidebar" id="sidebar" aria-label="Navigation principale">
+            <div class="sidebar-top">
+                <button
+                    class="icon-button menu-toggle"
+                    id="menu-toggle"
+                    type="button"
+                    aria-label="Ouvrir le menu"
+                    aria-expanded="false"
+                    title="Ouvrir le menu"
+                >
+                    <svg aria-hidden="true"><use href="#icon-menu"/></svg>
+                </button>
 
-        <form id="chat-form">
-            <textarea
-                id="message"
-                placeholder="Exemple : Prépare l'arrivée du stagiaire Paul..."
-                required
-            ></textarea>
-
-            <button type="submit">Envoyer</button>
-        </form>
-
-        <section class="response">
-            <h2>Réponse de l'agent</h2>
-            <div id="agent-response">En attente d'une demande...</div>
-        </section>
-
-        <details class="tool-trace" open>
-            <summary>Trace des outils</summary>
-            <p id="request-metrics" class="request-metrics">Métriques indisponibles.</p>
-            <div id="tool-trace-list">
-                <p>Aucun outil utilisé.</p>
+                <span class="rail-mark" aria-hidden="true">
+                    <svg><use href="#icon-spark"/></svg>
+                </span>
             </div>
-        </details>
 
-        <details class="tool-toggles">
-            <summary>Outils actifs</summary>
-            <p class="tool-toggles-hint">
-                Active ou désactive un outil pour l'agent, effectif dès le prochain message
-                (utile pour démontrer que l'app ne plante pas quand un outil est débranché).
-            </p>
-            <div id="tool-toggles-list">Chargement...</div>
-        </details>
-    </main>
+            <nav class="sidebar-nav" aria-label="Sections de LE BRAS">
+                <button
+                    class="nav-item"
+                    id="profile-toggle"
+                    type="button"
+                    title="Profil"
+                    aria-label="Profil"
+                    hidden
+                >
+                    <svg aria-hidden="true"><use href="#icon-user"/></svg>
+                    <span class="nav-label account-label">
+                        <strong>Profil</strong>
+                        <small id="profile-email-nav"></small>
+                    </span>
+                </button>
+
+                <button
+                    class="nav-item"
+                    id="connection-toggle"
+                    type="button"
+                    title="Connexion"
+                    aria-label="Connexion"
+                >
+                    <svg aria-hidden="true"><use href="#icon-login"/></svg>
+                    <span class="nav-label" id="connection-label">Connexion</span>
+                </button>
+
+                <button
+                    class="nav-item active"
+                    id="new-conversation"
+                    type="button"
+                    title="Nouvelle conversation"
+                    aria-label="Nouvelle conversation"
+                    aria-current="page"
+                >
+                    <svg aria-hidden="true"><use href="#icon-chat"/></svg>
+                    <span class="nav-label">Nouvelle conversation</span>
+                </button>
+
+                <button
+                    class="nav-item"
+                    id="calendar-toggle"
+                    type="button"
+                    title="Calendrier"
+                    aria-label="Calendrier"
+                >
+                    <svg aria-hidden="true"><use href="#icon-calendar"/></svg>
+                    <span class="nav-label">Calendrier</span>
+                </button>
+
+                <button
+                    class="nav-item"
+                    id="accepted-actions-toggle"
+                    type="button"
+                    title="Historique de tâches acceptées"
+                    aria-label="Historique de tâches acceptées"
+                >
+                    <svg aria-hidden="true"><use href="#icon-check"/></svg>
+                    <span class="nav-label">Historique de tâches acceptées</span>
+                </button>
+
+                <div class="nav-separator" aria-hidden="true"></div>
+
+                <button
+                    class="nav-item"
+                    id="conversation-history-toggle"
+                    type="button"
+                    title="Historique de conversation"
+                    aria-label="Historique de conversation"
+                >
+                    <svg aria-hidden="true"><use href="#icon-history"/></svg>
+                    <span class="nav-label">Historique de conversation</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="settings-menu" id="settings-menu" role="menu" hidden>
+                    <span class="settings-menu-title">Apparence</span>
+                    <label class="theme-control" for="theme-toggle">
+                        <svg class="theme-icon sun-icon" aria-hidden="true"><use href="#icon-sun"/></svg>
+                        <span>Mode nuit</span>
+                        <input id="theme-toggle" type="checkbox" role="switch" aria-label="Activer le mode nuit">
+                        <span class="switch-track" aria-hidden="true"><span></span></span>
+                        <svg class="theme-icon moon-icon" aria-hidden="true"><use href="#icon-moon"/></svg>
+                    </label>
+
+                    <div class="settings-menu-separator" aria-hidden="true"></div>
+                    <span class="settings-menu-title">Outils actifs</span>
+                    <p class="tool-toggles-hint">Effectif dès la prochaine demande.</p>
+                    <div class="tool-toggles-list" id="tool-toggles-list">Chargement...</div>
+                </div>
+
+                <button
+                    class="nav-item"
+                    id="settings-toggle"
+                    type="button"
+                    title="Paramètre"
+                    aria-label="Paramètre"
+                    aria-expanded="false"
+                >
+                    <svg aria-hidden="true"><use href="#icon-settings"/></svg>
+                    <span class="nav-label">Paramètre</span>
+                </button>
+            </div>
+        </aside>
+
+        <button class="sidebar-backdrop" id="sidebar-backdrop" type="button" aria-label="Fermer le menu"></button>
+
+        <main class="main-content">
+            <div class="ambient-shape ambient-shape-top" aria-hidden="true"></div>
+            <div class="ambient-shape ambient-shape-bottom" aria-hidden="true"></div>
+            <div class="decor-dots" aria-hidden="true"></div>
+            <div class="ambient-wave" aria-hidden="true"></div>
+
+            <header class="topbar">
+                <p>HACKATON C29 - Noham &amp; Jonathan</p>
+            </header>
+
+            <section class="workspace" id="workspace" aria-label="Assistant LE BRAS">
+                <section class="calendar-view" id="calendar-view" aria-labelledby="calendar-title" hidden>
+                    <div class="calendar-card">
+                        <header class="calendar-header">
+                            <div>
+                                <span class="calendar-kicker">Organisation</span>
+                                <h1 id="calendar-title">Calendrier</h1>
+                                <p>Sélectionnez une date pour préparer une demande.</p>
+                            </div>
+
+                            <div class="calendar-controls" aria-label="Navigation du calendrier">
+                                <button id="calendar-previous" type="button" aria-label="Mois précédent" title="Mois précédent">
+                                    <svg aria-hidden="true"><use href="#icon-arrow"/></svg>
+                                </button>
+                                <button class="calendar-today" id="calendar-today" type="button">Aujourd’hui</button>
+                                <button id="calendar-next" type="button" aria-label="Mois suivant" title="Mois suivant">
+                                    <svg aria-hidden="true"><use href="#icon-arrow"/></svg>
+                                </button>
+                            </div>
+                        </header>
+
+                        <div class="calendar-month-heading" aria-live="polite" id="calendar-month"></div>
+
+                        <div class="calendar-weekdays" aria-hidden="true">
+                            <span>Lun</span>
+                            <span>Mar</span>
+                            <span>Mer</span>
+                            <span>Jeu</span>
+                            <span>Ven</span>
+                            <span>Sam</span>
+                            <span>Dim</span>
+                        </div>
+
+                        <div class="calendar-grid" id="calendar-grid" role="grid" aria-label="Jours du mois"></div>
+
+                        <footer class="calendar-selection">
+                            <div>
+                                <span>Date sélectionnée</span>
+                                <strong id="calendar-selected-date"></strong>
+                            </div>
+                            <button id="calendar-use-date" type="button">Préparer une demande</button>
+                        </footer>
+                    </div>
+                </section>
+
+                <section class="management-view" id="auth-view" aria-labelledby="auth-title" hidden>
+                    <div class="management-card auth-card">
+                        <header class="management-header">
+                            <div>
+                                <span class="calendar-kicker">Espace personnel</span>
+                                <h1 id="auth-title">Connexion</h1>
+                                <p id="auth-description">Connectez-vous pour conserver vos conversations et actions acceptées.</p>
+                            </div>
+                        </header>
+
+                        <form class="auth-form" id="auth-form">
+                            <label for="auth-email">Adresse e-mail</label>
+                            <input id="auth-email" name="email" type="email" autocomplete="email" required>
+
+                            <label for="auth-password">Mot de passe</label>
+                            <input id="auth-password" name="password" type="password" minlength="8" autocomplete="current-password" required>
+
+                            <button class="primary-button" id="auth-submit" type="submit">Se connecter</button>
+                            <p class="form-error" id="auth-error" role="alert"></p>
+                        </form>
+
+                        <button class="text-button" id="auth-mode-toggle" type="button">
+                            Créer un compte
+                        </button>
+                    </div>
+                </section>
+
+                <section class="management-view" id="profile-view" aria-labelledby="profile-title" hidden>
+                    <div class="management-card profile-card">
+                        <header class="management-header">
+                            <div>
+                                <span class="calendar-kicker">Compte connecté</span>
+                                <h1 id="profile-title">Profil</h1>
+                                <p>Les historiques ci-dessous sont associés à ce compte.</p>
+                            </div>
+                        </header>
+                        <div class="profile-identity">
+                            <span class="profile-avatar" aria-hidden="true">
+                                <svg><use href="#icon-user"/></svg>
+                            </span>
+                            <div>
+                                <span>Adresse e-mail</span>
+                                <strong id="profile-email"></strong>
+                                <small id="profile-created-at"></small>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="management-view" id="accepted-actions-view" aria-labelledby="accepted-actions-title" hidden>
+                    <div class="management-card history-card">
+                        <header class="management-header history-header">
+                            <div>
+                                <span class="calendar-kicker">Suivi</span>
+                                <h1 id="accepted-actions-title">Tâches acceptées</h1>
+                                <p>Historique des actions approuvées et exécutées.</p>
+                            </div>
+                            <button class="secondary-button" id="refresh-actions" type="button">Actualiser</button>
+                        </header>
+                        <div class="history-list" id="accepted-actions-list"></div>
+                    </div>
+                </section>
+
+                <section class="management-view" id="conversation-history-view" aria-labelledby="conversation-history-title" hidden>
+                    <div class="management-card history-card">
+                        <header class="management-header history-header">
+                            <div>
+                                <span class="calendar-kicker">Mémoire</span>
+                                <h1 id="conversation-history-title">Historique de conversation</h1>
+                                <p>Conversations enregistrées lorsque vous êtes connecté.</p>
+                            </div>
+                            <button class="secondary-button" id="refresh-conversations" type="button">Actualiser</button>
+                        </header>
+                        <div class="history-list" id="conversation-history-list"></div>
+                    </div>
+                </section>
+
+                <div class="home-view" id="home-view">
+                    <div class="brand-block">
+                        <h1>LE BRAS</h1>
+                        <p>Votre assistant opérationnel</p>
+                    </div>
+                </div>
+
+                <div class="conversation-view" id="conversation-view" hidden>
+                    <div class="conversation-log" id="conversation-log" aria-live="polite"></div>
+                </div>
+
+                <form class="composer" id="chat-form">
+                    <label class="visually-hidden" for="message">Votre demande</label>
+                    <textarea
+                        id="message"
+                        rows="1"
+                        placeholder="exemple: Prépare l'arrivée du stagiaire"
+                        required
+                    ></textarea>
+                    <button
+                        class="send-button"
+                        id="send-button"
+                        type="submit"
+                        aria-label="Envoyer la demande"
+                        title="Envoyer la demande"
+                    >
+                        <svg aria-hidden="true"><use href="#icon-arrow"/></svg>
+                    </button>
+                </form>
+
+                <p class="request-status visually-hidden" id="request-status" role="status"></p>
+            </section>
+        </main>
+    </div>
 
     <script src="app.js"></script>
 </body>

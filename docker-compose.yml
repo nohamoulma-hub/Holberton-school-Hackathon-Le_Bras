@@ -1,7 +1,30 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-lebras}
+      POSTGRES_USER: ${POSTGRES_USER:-lebras}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lebras_local_password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   app:
     build: .
     ports:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-lebras}:${POSTGRES_PASSWORD:-lebras_local_password}@db:5432/${POSTGRES_DB:-lebras}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
