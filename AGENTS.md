@@ -32,6 +32,6 @@ Les erreurs d'outil sont renvoyées à Claude afin qu'il explique l'échec sans 
 
 ## Configuration
 
-- **Modèle** : `claude-opus-5`, défini dans `app/agent.py`.
+- **Modèle** : `claude-sonnet-5`, défini dans `app/agent.py`.
 - **Effort** (`output_config.effort`) : réglable via la variable d'environnement `AGENT_EFFORT` dans `.env` (`low` / `medium` / `high` / `xhigh` / `max`), `medium` par défaut. Compromis vitesse/qualité pour le choix d'outil et la rédaction ; monter à `high` en cas de mauvais choix d'outil, descendre à `low` si la latence gêne en démo.
-- **Métriques** : tokens (input/output) et latence sont mesurés à chaque appel et renvoyés dans `metrics` sur `/chat`, sans coût estimé inventé (`estimated_cost: null`, `cost_status: "non_configured"`).
+- **Métriques** : tokens (input/output) et latence sont mesurés à chaque appel. Le coût est estimé sur le tarif connu de `claude-sonnet-5` ($3/$15 par million de tokens entrée/sortie, constantes `INPUT_PRICE_PER_MILLION_USD`/`OUTPUT_PRICE_PER_MILLION_USD` dans `app/agent.py`), à ajuster si le modèle change.

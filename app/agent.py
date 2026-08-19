@@ -23,6 +23,11 @@ client = anthropic.Anthropic()
 MAX_TOOL_ITERATIONS = 4
 MAX_TOOL_RESULT_CHARS = 6_000
 
+# Tarif claude-sonnet-5 (USD par million de tokens), pour le coût affiché à l'écran.
+# À ajuster si le modèle change (variable `model` de messages.create ci-dessous).
+INPUT_PRICE_PER_MILLION_USD = 3.0
+OUTPUT_PRICE_PER_MILLION_USD = 15.0
+
 # low | medium | high | xhigh | max, réglable sans toucher au code, voir .env.example
 AGENT_EFFORT = os.environ.get("AGENT_EFFORT", "medium")
 DEFAULT_TIMEZONE = "Europe/Paris"
@@ -88,14 +93,19 @@ def _serialize_tool_result(result: dict[str, Any]) -> str:
 
 
 def _metrics(input_tokens: int, output_tokens: int, start: float) -> dict[str, Any]:
-    """Construit les métriques disponibles sans inventer un coût API."""
+    """Construit les métriques, avec un coût estimé sur le tarif connu de claude-sonnet-5."""
+    estimated_cost = round(
+        (input_tokens / 1_000_000) * INPUT_PRICE_PER_MILLION_USD
+        + (output_tokens / 1_000_000) * OUTPUT_PRICE_PER_MILLION_USD,
+        6,
+    )
     return {
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "total_tokens": input_tokens + output_tokens,
         "latency_ms": round((time.monotonic() - start) * 1000, 1),
-        "estimated_cost": None,
-        "cost_status": "non_configured",
+        "estimated_cost": estimated_cost,
+        "cost_status": "estimated",
     }
 
 
@@ -117,7 +127,7 @@ def run_agent(user_message: str) -> dict[str, Any]:
 
     for _ in range(MAX_TOOL_ITERATIONS):
         response = client.messages.create(
-            model="claude-opus-5",
+            model="claude-sonnet-5",
             max_tokens=1024,
             system=(
                 f"{SYSTEM_PROMPT}\n\n{temporal_context}\n\n"

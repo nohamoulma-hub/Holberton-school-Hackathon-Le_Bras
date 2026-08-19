@@ -639,11 +639,15 @@ function renderMetrics(metrics) {
         return element;
     }
 
+    const costLabel = typeof metrics.estimated_cost === "number"
+        ? `coût estimé $${metrics.estimated_cost.toFixed(6)}`
+        : "coût non configuré";
+
     element.textContent = [
         `Tokens : ${metrics.input_tokens} entrée / ${metrics.output_tokens} sortie`,
         `total ${metrics.total_tokens}`,
         `latence globale ${metrics.latency_ms} ms`,
-        "coût non configuré",
+        costLabel,
     ].join(" | ");
     return element;
 }
