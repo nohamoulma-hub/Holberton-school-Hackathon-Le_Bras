@@ -41,6 +41,39 @@ button {
     border-top: 1px solid #ddd;
 }
 
+.response p {
+    margin: 8px 0;
+}
+
+.response ol,
+.response ul {
+    margin: 8px 0;
+    padding-left: 1.6em;
+}
+
+.response li {
+    margin: 4px 0;
+}
+
+.response table {
+    margin: 10px 0;
+    border-collapse: collapse;
+    width: 100%;
+}
+
+.response th,
+.response td {
+    border: 1px solid #ddd;
+    padding: 6px 10px;
+    text-align: left;
+}
+
+.response code {
+    background: #f0f0f0;
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
 .tool-trace {
     margin-top: 24px;
     padding-top: 16px;

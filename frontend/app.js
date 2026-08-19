@@ -8,6 +8,102 @@ function formatJson(value) {
     return JSON.stringify(value, null, 2);
 }
 
+function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function renderInline(text) {
+    let html = escapeHtml(text);
+    html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+    return html;
+}
+
+function isTableRow(line) {
+    return /^\|.*\|$/.test(line);
+}
+
+function isTableSeparator(line) {
+    return /^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$/.test(line);
+}
+
+function renderTableRow(line, cellTag) {
+    const cells = line.replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
+    return `<tr>${cells.map((cell) => `<${cellTag}>${renderInline(cell)}</${cellTag}>`).join("")}</tr>`;
+}
+
+// Convertisseur Markdown minimal, sans dépendance externe (gras, code, listes,
+// tableaux) : suffisant pour les réponses de l'agent, fiable même hors ligne.
+function renderMarkdown(text) {
+    const lines = String(text ?? "").split("\n");
+    let html = "";
+    let listType = null;
+    let tableLines = [];
+
+    function closeList() {
+        if (listType) {
+            html += `</${listType}>`;
+            listType = null;
+        }
+    }
+
+    function flushTable() {
+        if (tableLines.length === 0) {
+            return;
+        }
+        const rows = tableLines.filter((line) => !isTableSeparator(line));
+        html += "<table>";
+        rows.forEach((row, index) => {
+            html += renderTableRow(row, index === 0 ? "th" : "td");
+        });
+        html += "</table>";
+        tableLines = [];
+    }
+
+    lines.forEach((rawLine) => {
+        const line = rawLine.trim();
+
+        if (isTableRow(line)) {
+            closeList();
+            tableLines.push(line);
+            return;
+        }
+        flushTable();
+
+        const numbered = line.match(/^(\d+)\.\s+(.*)$/);
+        const bulleted = line.match(/^[-*]\s+(.*)$/);
+
+        if (numbered) {
+            if (listType !== "ol") {
+                closeList();
+                html += "<ol>";
+                listType = "ol";
+            }
+            html += `<li>${renderInline(numbered[2])}</li>`;
+            return;
+        }
+
+        if (bulleted) {
+            if (listType !== "ul") {
+                closeList();
+                html += "<ul>";
+                listType = "ul";
+            }
+            html += `<li>${renderInline(bulleted[1])}</li>`;
+            return;
+        }
+
+        closeList();
+        html += line === "" ? "<br>" : `<p>${renderInline(line)}</p>`;
+    });
+
+    closeList();
+    flushTable();
+    return html;
+}
+
 function appendTraceValue(container, label, value) {
     const labelElement = document.createElement("strong");
     labelElement.textContent = label;
@@ -187,7 +283,7 @@ form.addEventListener("submit", async (event) => {
             throw new Error(data.detail || "Erreur du serveur");
         }
 
-        agentResponse.textContent = data.response;
+        agentResponse.innerHTML = renderMarkdown(data.response);
         renderTrace(data.trace);
         renderMetrics(data.metrics);
     } catch (error) {
