@@ -65,6 +65,21 @@ def _metrics(input_tokens: int, output_tokens: int, start: float) -> dict[str, A
     }
 
 
+def _active_tool_definitions() -> list[dict[str, Any]]:
+    """Filtre les outils désactivés via DISABLED_TOOLS dans .env (liste séparée par des virgules).
+
+    Recharge .env à chaque appel pour permettre de débrancher un outil en démo sans redémarrer
+    le serveur : éditer .env, sauvegarder, relancer la même requête.
+    """
+    load_dotenv(override=True)
+    disabled = {
+        name.strip() for name in os.environ.get("DISABLED_TOOLS", "").split(",") if name.strip()
+    }
+    if not disabled:
+        return TOOL_DEFINITIONS
+    return [tool for tool in TOOL_DEFINITIONS if tool["name"] not in disabled]
+
+
 def run_agent(user_message: str) -> dict[str, Any]:
     """Boucle agent avec tool calling natif Claude.
 
@@ -77,13 +92,14 @@ def run_agent(user_message: str) -> dict[str, Any]:
     output_tokens = 0
     trace: list[dict[str, Any]] = []
     messages: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
+    active_tools = _active_tool_definitions()
 
     for _ in range(MAX_TOOL_ITERATIONS):
         response = client.messages.create(
             model="claude-opus-5",
             max_tokens=1024,
             system=f"{SYSTEM_PROMPT}\n\nIdentifiant du plan courant : {plan_id}",
-            tools=TOOL_DEFINITIONS,
+            tools=active_tools,
             messages=messages,
             output_config={"effort": AGENT_EFFORT},
         )
