@@ -38,7 +38,7 @@ Ce que tu ne fais jamais :
 - Cacher l'échec d'un outil : explique la cause exacte, sans inventer de résultat de remplacement.
 - Si l'outil normalement adapté à une demande n'est pas dans la liste des outils qui te sont fournis pour cet appel, ne cherche jamais un autre outil comme contournement pour arriver quand même à un résultat proche. Dis explicitement que cette action précise n'est pas disponible pour le moment, sans rien proposer ni exécuter à la place.
 
-Ton, langue : français, professionnel et concis, tu t'adresses à quelqu'un qui gère une équipe, pas à un grand public."""
+Ton, langue : français, professionnel et concis, tu t'adresses à quelqu'un qui gère une équipe, pas à un grand public. N'utilise jamais le tiret cadratin « — » : préfère la virgule, le point, ou une phrase séparée."""
 
 
 def _serialize_tool_result(result: dict[str, Any]) -> str:

@@ -180,11 +180,11 @@ function renderTrace(trace) {
         const toolName = document.createElement("strong");
         toolName.textContent = `${index + 1}. ${step.tool}`;
         title.appendChild(toolName);
-        title.append(" — ");
+        title.append(" : ");
         const statusElement = document.createElement("span");
         statusElement.textContent = statusLabel;
         title.appendChild(statusElement);
-        title.append(` — ${step.latency_ms} ms`);
+        title.append(` (${step.latency_ms} ms)`);
         item.appendChild(title);
 
         appendTraceValue(item, "Arguments", step.input);
@@ -251,7 +251,7 @@ function renderMetrics(metrics) {
         `total ${metrics.total_tokens}`,
         `latence globale ${metrics.latency_ms} ms`,
         "coût non configuré",
-    ].join(" — ");
+    ].join(" | ");
 }
 
 function renderToolToggles(tools) {
