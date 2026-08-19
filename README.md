@@ -128,7 +128,8 @@ Réponse :
 
 ```json
 {
-  "status": "ok"
+  "status": "ok",
+  "database": "ok"
 }
 ```
 
@@ -184,6 +185,17 @@ d'origine, avec leurs arguments, statuts, résultats et erreurs. Le frontend con
 
 `GET /plans/latest` retourne le dernier plan du compte connecté.
 
+### Calendrier persistant
+
+```text
+GET /calendar/events
+GET /calendar/events?start=2026-08-01&end=2026-09-01
+```
+
+La route retourne uniquement les événements réellement exécutés. Le calendrier recharge la période
+à chaque changement de mois, affiche un indicateur sur les jours concernés et détaille les horaires
+et participants de la date sélectionnée.
+
 ### Compte et profil
 
 ```text
@@ -227,7 +239,7 @@ est initialisée au démarrage avec toutes les tables nécessaires.
 
 ## Variables d'environnement et sécurité
 
-La vraie clé Anthropic doit être enregistrée uniquement dans le fichier local `.env`. Ce fichier ne doit jamais être commité ni envoyé sur un dépôt distant. Le fichier `.env.example` documente uniquement les variables attendues et ne doit contenir aucune vraie clé. Les mots de passe sont dérivés avec PBKDF2 et les jetons de session ne sont stockés qu'après hachage.
+La vraie clé Anthropic doit être enregistrée uniquement dans le fichier local `.env`. Ce fichier ne doit jamais être commité ni envoyé sur un dépôt distant. Le fichier `.env.example` documente uniquement les variables attendues et ne doit contenir aucune vraie clé. `APP_TIMEZONE` définit le fuseau utilisé par Claude pour résoudre les dates relatives, avec `Europe/Paris` par défaut. Les mots de passe sont dérivés avec PBKDF2 et les jetons de session ne sont stockés qu'après hachage.
 
 ## Stack technique
 

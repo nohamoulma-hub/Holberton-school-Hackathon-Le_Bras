@@ -1,9 +1,11 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "test")
 
@@ -367,6 +369,80 @@ class Palier3TestCase(unittest.TestCase):
         self.assertEqual(result["trace"], [])
         self.assertIn("outils", result["response"])
         self.assertIn("ce n'est pas une action disponible", agent.SYSTEM_PROMPT)
+
+    def test_agent_receives_the_current_datetime_and_timezone(self):
+        from app import agent
+
+        current_datetime = datetime(
+            2026,
+            8,
+            19,
+            14,
+            35,
+            12,
+            tzinfo=ZoneInfo("Europe/Paris"),
+        )
+        response = SimpleNamespace(
+            content=[SimpleNamespace(type="text", text="Date comprise.")],
+            usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+        )
+        with (
+            patch.object(agent, "get_current_datetime", return_value=current_datetime),
+            patch.object(agent.client.messages, "create", return_value=response) as create,
+        ):
+            agent.run_agent("Planifie une réunion demain")
+
+        temporal_system = create.call_args.kwargs["system"]
+        self.assertIn("date actuelle : 2026-08-19", temporal_system)
+        self.assertIn("heure actuelle : 14:35:12", temporal_system)
+        self.assertIn("fuseau horaire : Europe/Paris", temporal_system)
+        self.assertIn('"dans N jours"', temporal_system)
+
+    def test_agent_can_propose_august_22_for_in_three_days(self):
+        from app import agent
+
+        current_datetime = datetime(
+            2026,
+            8,
+            19,
+            9,
+            0,
+            tzinfo=ZoneInfo("Europe/Paris"),
+        )
+        tool_response = SimpleNamespace(
+            content=[
+                SimpleNamespace(
+                    type="tool_use",
+                    id="calendar-tool",
+                    name="create_calendar_event",
+                    input={
+                        "title": "Réunion avec Bertrand",
+                        "start": "2026-08-22T10:00:00+02:00",
+                        "duration_min": 60,
+                        "attendees": ["Bertrand"],
+                    },
+                )
+            ],
+            usage=SimpleNamespace(input_tokens=5, output_tokens=5),
+        )
+        final_response = SimpleNamespace(
+            content=[SimpleNamespace(type="text", text="L'événement attend votre validation.")],
+            usage=SimpleNamespace(input_tokens=5, output_tokens=5),
+        )
+        with (
+            patch.object(agent, "get_current_datetime", return_value=current_datetime),
+            patch.object(
+                agent.client.messages,
+                "create",
+                side_effect=[tool_response, final_response],
+            ) as create,
+        ):
+            result = agent.run_agent(
+                "Je voudrais planifier une réunion avec Bertrand dans 3 jours à 10h"
+            )
+
+        self.assertEqual(result["trace"][0]["input"]["start"], "2026-08-22T10:00:00+02:00")
+        self.assertIn("date actuelle : 2026-08-19", create.call_args_list[0].kwargs["system"])
 
 
 if __name__ == "__main__":
