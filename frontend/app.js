@@ -10,6 +10,7 @@ const profileEmailNav = document.getElementById("profile-email-nav");
 const connectionToggle = document.getElementById("connection-toggle");
 const connectionLabel = document.getElementById("connection-label");
 const newConversationButton = document.getElementById("new-conversation");
+const currentConversationButton = document.getElementById("current-conversation");
 const calendarToggle = document.getElementById("calendar-toggle");
 const acceptedActionsToggle = document.getElementById("accepted-actions-toggle");
 const conversationHistoryToggle = document.getElementById("conversation-history-toggle");
@@ -361,6 +362,7 @@ function setActiveNavigation(activeButton) {
         profileToggle,
         connectionToggle,
         newConversationButton,
+        currentConversationButton,
         calendarToggle,
         acceptedActionsToggle,
         conversationHistoryToggle,
@@ -635,18 +637,36 @@ function resizeMessageInput() {
     messageInput.style.height = `${Math.min(messageInput.scrollHeight, 130)}px`;
 }
 
+function setCurrentConversationAvailable(isAvailable) {
+    currentConversationButton.hidden = !isAvailable;
+}
+
 function showConversation() {
+    setCurrentConversationAvailable(true);
     workspace.classList.remove("is-calendar");
     workspace.classList.add("is-conversation");
     hideWorkspaceViews();
     conversationView.hidden = false;
     form.hidden = false;
-    setActiveNavigation(newConversationButton);
+    setActiveNavigation(currentConversationButton);
     messageInput.placeholder = "Votre prochaine demande...";
+}
+
+async function openCurrentConversation() {
+    if (conversationLog.childElementCount === 0) {
+        await restoreCurrentPlan();
+    } else {
+        showConversation();
+    }
+
+    if (window.matchMedia("(max-width: 760px)").matches) {
+        setSidebar(false);
+    }
 }
 
 function resetConversation() {
     localStorage.removeItem(CURRENT_PLAN_STORAGE_KEY);
+    setCurrentConversationAvailable(false);
     conversationLog.replaceChildren();
     workspace.classList.remove("is-conversation", "is-calendar");
     hideWorkspaceViews();
@@ -1506,6 +1526,7 @@ authForm.addEventListener("submit", async (event) => {
 });
 
 newConversationButton.addEventListener("click", resetConversation);
+currentConversationButton.addEventListener("click", openCurrentConversation);
 calendarToggle.addEventListener("click", showCalendar);
 acceptedActionsToggle.addEventListener("click", openAcceptedActions);
 conversationHistoryToggle.addEventListener("click", openConversationHistory);
