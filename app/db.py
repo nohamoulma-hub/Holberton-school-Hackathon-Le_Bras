@@ -66,6 +66,7 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS actions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             plan_id TEXT NOT NULL,
+            action_index INTEGER NOT NULL,
             tool_name TEXT NOT NULL,
             input_json TEXT NOT NULL,
             status TEXT NOT NULL,
@@ -77,6 +78,12 @@ def init_db() -> None:
         )
         """
     )
+    action_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(actions)").fetchall()
+    }
+    if "action_index" not in action_columns:
+        conn.execute("ALTER TABLE actions ADD COLUMN action_index INTEGER")
+    conn.execute("UPDATE actions SET action_index = id WHERE action_index IS NULL")
     conn.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_actions_plan_status

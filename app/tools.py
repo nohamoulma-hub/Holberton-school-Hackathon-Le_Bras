@@ -209,7 +209,7 @@ def list_pending_actions(plan_id: str) -> list[dict[str, Any]]:
     try:
         rows = conn.execute(
             """
-            SELECT id, tool_name, input_json, status, created_at
+            SELECT id, action_index, tool_name, input_json, status, created_at
             FROM actions
             WHERE plan_id = ? AND status = 'pending'
             ORDER BY id ASC
@@ -222,6 +222,7 @@ def list_pending_actions(plan_id: str) -> list[dict[str, Any]]:
     return [
         {
             "action_id": row["id"],
+            "action_index": row["action_index"],
             "tool": row["tool_name"],
             "input": json.loads(row["input_json"]),
             "status": row["status"],
@@ -458,8 +459,22 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 ]
 
 
-def _idempotency_key(tool_name: str, tool_input: dict[str, Any]) -> str:
-    payload = json.dumps({"tool": tool_name, "input": tool_input}, sort_keys=True, default=str)
+def _idempotency_key(
+    plan_id: str,
+    action_index: int,
+    tool_name: str,
+    tool_input: dict[str, Any],
+) -> str:
+    payload = json.dumps(
+        {
+            "plan_id": plan_id,
+            "action_index": action_index,
+            "tool": tool_name,
+            "input": tool_input,
+        },
+        sort_keys=True,
+        default=str,
+    )
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
@@ -522,6 +537,7 @@ def _log_audit(
 
 def _queue_pending_action(
     plan_id: str,
+    action_index: int,
     tool_name: str,
     tool_input: dict[str, Any],
     idempotency_key: str,
@@ -530,14 +546,16 @@ def _queue_pending_action(
     now = datetime.now(timezone.utc).isoformat()
     conn = get_connection()
     try:
-        conn.execute(
+        cursor = conn.execute(
             """
             INSERT OR IGNORE INTO actions
-                (plan_id, tool_name, input_json, status, idempotency_key, created_at, updated_at)
-            VALUES (?, ?, ?, 'pending', ?, ?, ?)
+                (plan_id, action_index, tool_name, input_json, status, idempotency_key,
+                 created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)
             """,
             (
                 plan_id,
+                action_index,
                 tool_name,
                 json.dumps(tool_input, ensure_ascii=False, default=str),
                 idempotency_key,
@@ -546,7 +564,11 @@ def _queue_pending_action(
             ),
         )
         row = conn.execute(
-            "SELECT id, plan_id, status, output_json, error FROM actions WHERE idempotency_key = ?",
+            """
+            SELECT id, plan_id, action_index, status, output_json, error
+            FROM actions
+            WHERE idempotency_key = ?
+            """,
             (idempotency_key,),
         ).fetchone()
         conn.commit()
@@ -555,7 +577,9 @@ def _queue_pending_action(
     result: dict[str, Any] = {
         "action_id": row["id"],
         "plan_id": row["plan_id"],
+        "action_index": row["action_index"],
         "status": row["status"],
+        "_created": cursor.rowcount == 1,
     }
     if row["output_json"]:
         result["result"] = json.loads(row["output_json"])
@@ -569,6 +593,7 @@ def execute_tool(
     tool_input: dict[str, Any],
     *,
     plan_id: str = "default",
+    action_index: int = 0,
     approved: bool = False,
 ) -> dict[str, Any]:
     """Exécute un outil en lecture seule ou prépare un effet de bord à valider.
@@ -578,7 +603,7 @@ def execute_tool(
     n'est propagée vers la boucle de l'agent.
     """
     implementation = TOOL_IMPLEMENTATIONS.get(tool_name)
-    idempotency_key = _idempotency_key(tool_name, tool_input)
+    idempotency_key = _idempotency_key(plan_id, action_index, tool_name, tool_input)
 
     if implementation is None:
         error = f"Outil inconnu : {tool_name}"
@@ -586,7 +611,10 @@ def execute_tool(
         return {"ok": False, "error": error, "status": "error", "audit_id": audit_id}
 
     if tool_name in SIDE_EFFECT_TOOLS and not approved:
-        pending = _queue_pending_action(plan_id, tool_name, tool_input, idempotency_key)
+        pending = _queue_pending_action(
+            plan_id, action_index, tool_name, tool_input, idempotency_key
+        )
+        was_created = pending.pop("_created")
         if pending["status"] == "executed":
             cached = _get_cached_result(idempotency_key)
             if cached is not None:
@@ -613,7 +641,7 @@ def execute_tool(
             "result": pending,
             "status": pending["status"],
             "audit_id": audit_id,
-            "idempotent_replay": pending["status"] != "pending",
+            "idempotent_replay": not was_created,
         }
 
     if tool_name not in READ_ONLY_TOOLS:
@@ -666,7 +694,11 @@ def approve_pending_action(action_id: int) -> dict[str, Any]:
 
     tool_input = json.loads(row["input_json"])
     result = execute_tool(
-        row["tool_name"], tool_input, plan_id=row["plan_id"], approved=True
+        row["tool_name"],
+        tool_input,
+        plan_id=row["plan_id"],
+        action_index=row["action_index"],
+        approved=True,
     )
     now = datetime.now(timezone.utc).isoformat()
     conn = get_connection()

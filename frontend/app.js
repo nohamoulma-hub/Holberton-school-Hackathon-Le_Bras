@@ -16,6 +16,44 @@ function appendTraceValue(container, label, value) {
     const valueElement = document.createElement("pre");
     valueElement.textContent = formatJson(value);
     container.appendChild(valueElement);
+    return valueElement;
+}
+
+async function submitActionDecision(actionId, decision, elements) {
+    if (elements.inFlight || elements.settled) {
+        return;
+    }
+
+    elements.inFlight = true;
+    elements.approveButton.disabled = true;
+    elements.rejectButton.disabled = true;
+    elements.errorElement.textContent = "";
+
+    try {
+        const response = await fetch(`/actions/${actionId}/${decision}`, {method: "POST"});
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.detail || "Erreur du serveur");
+        }
+
+        elements.settled = true;
+        if (decision === "approve") {
+            elements.item.className = "trace-step success";
+            elements.statusElement.textContent = "Succès";
+            elements.resultElement.textContent = formatJson(data.result);
+        } else {
+            elements.item.className = "trace-step rejected";
+            elements.statusElement.textContent = "Action refusée";
+            elements.resultElement.textContent = "Action refusée";
+        }
+    } catch (error) {
+        elements.errorElement.textContent = `Erreur : ${error.message}`;
+        elements.approveButton.disabled = false;
+        elements.rejectButton.disabled = false;
+    } finally {
+        elements.inFlight = false;
+    }
 }
 
 function renderTrace(trace) {
@@ -45,14 +83,60 @@ function renderTrace(trace) {
         const toolName = document.createElement("strong");
         toolName.textContent = `${index + 1}. ${step.tool}`;
         title.appendChild(toolName);
-        title.append(` — ${statusLabel} — ${step.latency_ms} ms`);
+        title.append(" — ");
+        const statusElement = document.createElement("span");
+        statusElement.textContent = statusLabel;
+        title.appendChild(statusElement);
+        title.append(` — ${step.latency_ms} ms`);
         item.appendChild(title);
 
         appendTraceValue(item, "Arguments", step.input);
+        let resultElement;
         if (step.ok) {
-            appendTraceValue(item, "Résultat", step.output);
+            resultElement = appendTraceValue(item, "Résultat", step.output);
         } else {
-            appendTraceValue(item, "Erreur", step.error);
+            resultElement = appendTraceValue(item, "Erreur", step.error);
+        }
+
+        const actionId = step.action_id || (step.output && step.output.action_id);
+        if (status === "pending" && actionId) {
+            const controls = document.createElement("div");
+            controls.className = "action-controls";
+
+            const approveButton = document.createElement("button");
+            approveButton.type = "button";
+            approveButton.className = "approve-action";
+            approveButton.textContent = "Approuver";
+
+            const rejectButton = document.createElement("button");
+            rejectButton.type = "button";
+            rejectButton.className = "reject-action";
+            rejectButton.textContent = "Refuser";
+
+            const errorElement = document.createElement("p");
+            errorElement.className = "action-error";
+            errorElement.setAttribute("role", "alert");
+
+            const elements = {
+                item,
+                statusElement,
+                resultElement,
+                approveButton,
+                rejectButton,
+                errorElement,
+                inFlight: false,
+                settled: false,
+            };
+
+            approveButton.addEventListener("click", () => {
+                submitActionDecision(actionId, "approve", elements);
+            });
+            rejectButton.addEventListener("click", () => {
+                submitActionDecision(actionId, "reject", elements);
+            });
+
+            controls.append(approveButton, rejectButton);
+            item.append(controls, errorElement);
         }
 
         toolTraceList.appendChild(item);

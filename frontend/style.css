@@ -77,6 +77,10 @@ button {
     border-left-color: #c53030;
 }
 
+.trace-step.rejected {
+    border-left-color: #718096;
+}
+
 .trace-step p {
     margin: 6px 0;
 }
@@ -88,4 +92,34 @@ button {
     white-space: pre-wrap;
     background: #fff;
     border: 1px solid #ddd;
+}
+
+.action-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.action-controls button {
+    margin-top: 0;
+}
+
+.approve-action {
+    color: white;
+    background: #2f855a;
+    border: 1px solid #276749;
+}
+
+.reject-action {
+    color: white;
+    background: #c53030;
+    border: 1px solid #9b2c2c;
+}
+
+.action-controls button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.action-error {
+    color: #c53030;
 }

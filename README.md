@@ -12,6 +12,7 @@ Le Palier 3 est opérationnel :
 - le frontend appelle `/chat` sans URL de backend codée en dur ;
 - Claude choisit parmi sept outils via le Tool Calling natif Anthropic ;
 - les effets de bord sont idempotents, audités et mis en attente d'une validation humaine ;
+- le frontend permet d'approuver ou refuser chaque action en attente ;
 - les outils locaux réversibles peuvent être annulés une fois ;
 - l'ensemble de l'application fonctionne dans un seul conteneur Docker exposé sur le port `8000`.
 
@@ -144,7 +145,7 @@ Réponse :
 }
 ```
 
-Les actions à effet de bord apparaissent d'abord avec le statut `pending`. Elles peuvent ensuite être validées ou refusées explicitement :
+Les actions à effet de bord apparaissent d'abord avec le statut `pending`. Elles peuvent ensuite être validées ou refusées depuis le frontend, qui appelle les endpoints suivants :
 
 ```text
 POST /actions/{action_id}/approve
@@ -152,6 +153,8 @@ POST /actions/{action_id}/reject
 ```
 
 Le journal récent des appels d'outils est disponible avec `GET /trace`.
+
+La clé d'idempotence d'une action dépend de son `plan_id`, de son `action_index`, du Tool et de ses arguments. Rejouer exactement la même action ne répète donc pas son effet, sans confondre deux plans ou deux positions différentes.
 
 Les intégrations sont locales pour ce hackathon : l'issue tracker, les records, les événements et l'audit utilisent SQLite ; la messagerie écrit des fichiers Markdown sous `outbox/` ; les documents sont générés sous `files/`.
 
@@ -178,7 +181,6 @@ FastAPI sert directement le frontend statique et l'API, tandis que SQLite et les
 Le projet ne propose pas encore :
 
 - de plan structuré ;
-- d'interface complète pour approuver ou refuser chaque action ;
 - de véritables intégrations tierces pour les issues, messages ou calendriers ;
 - d'authentification ou de gestion multi-utilisateurs ;
 - de gestion des validations concurrentes ;

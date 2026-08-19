@@ -67,6 +67,7 @@ def run_agent(user_message: str) -> dict[str, Any]:
     """
     request_start = time.monotonic()
     plan_id = uuid.uuid4().hex
+    action_index = 0
     input_tokens = 0
     output_tokens = 0
     trace: list[dict[str, Any]] = []
@@ -99,15 +100,25 @@ def run_agent(user_message: str) -> dict[str, Any]:
         tool_results = []
         for block in tool_use_blocks:
             start = time.monotonic()
-            result = execute_tool(block.name, block.input, plan_id=plan_id)
+            current_action_index = action_index
+            action_index += 1
+            result = execute_tool(
+                block.name,
+                block.input,
+                plan_id=plan_id,
+                action_index=current_action_index,
+            )
             latency_ms = round((time.monotonic() - start) * 1000, 1)
+            output = result.get("result")
 
             step = {
                 "tool": block.name,
                 "input": block.input,
+                "action_index": current_action_index,
+                "action_id": output.get("action_id") if isinstance(output, dict) else None,
                 "ok": result["ok"],
                 "status": result.get("status", "success" if result["ok"] else "error"),
-                "output": result.get("result"),
+                "output": output,
                 "error": result.get("error"),
                 "latency_ms": latency_ms,
             }

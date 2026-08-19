@@ -14,7 +14,7 @@ LE BRAS est un agent opérationnel d'entreprise. Il transforme une demande compa
 - `list_pending_actions` : consulte les actions en attente d'un plan (`READ_ONLY`).
 - `undo_last_action` : annule une action locale exécutée et réversible (`SIDE_EFFECT`).
 
-Un outil `READ_ONLY` peut être exécuté immédiatement. Un outil `SIDE_EFFECT` doit d'abord créer une action en attente ; seul le backend peut l'exécuter après validation humaine explicite. Un refus ne doit jamais appeler l'implémentation de l'outil.
+Un outil `READ_ONLY` peut être exécuté immédiatement. Un outil `SIDE_EFFECT` doit d'abord créer une action en attente ; le frontend peut demander son approbation ou son refus, mais seul le backend décide de l'exécuter après validation humaine explicite. Un refus ne doit jamais appeler l'implémentation de l'outil. La clé d'idempotence inclut `plan_id`, `action_index`, le Tool et ses arguments.
 
 ## Boucle de tool calling
 

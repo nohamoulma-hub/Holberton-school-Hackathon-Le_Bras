@@ -31,8 +31,16 @@ class Palier3TestCase(unittest.TestCase):
         tools.FILES_DIR = self.original_files_dir
         self.temporary_directory.cleanup()
 
-    def queue_and_approve(self, tool_name: str, tool_input: dict, plan_id: str = "plan-test"):
-        proposed = tools.execute_tool(tool_name, tool_input, plan_id=plan_id)
+    def queue_and_approve(
+        self,
+        tool_name: str,
+        tool_input: dict,
+        plan_id: str = "plan-test",
+        action_index: int = 0,
+    ):
+        proposed = tools.execute_tool(
+            tool_name, tool_input, plan_id=plan_id, action_index=action_index
+        )
         self.assertTrue(proposed["ok"])
         self.assertEqual(proposed["status"], "pending")
         action_id = proposed["result"]["action_id"]
@@ -53,6 +61,125 @@ class Palier3TestCase(unittest.TestCase):
         }
         self.assertEqual(set(tools.TOOL_IMPLEMENTATIONS), expected)
         self.assertEqual({definition["name"] for definition in tools.TOOL_DEFINITIONS}, expected)
+
+    def test_existing_actions_table_is_migrated_without_data_loss(self):
+        db.DB_PATH = self.project_dir / "legacy.db"
+        conn = db.get_connection()
+        conn.execute(
+            """
+            CREATE TABLE actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plan_id TEXT NOT NULL,
+                tool_name TEXT NOT NULL,
+                input_json TEXT NOT NULL,
+                status TEXT NOT NULL,
+                idempotency_key TEXT UNIQUE NOT NULL,
+                output_json TEXT,
+                error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO actions
+                (plan_id, tool_name, input_json, status, idempotency_key, created_at, updated_at)
+            VALUES ('ancien-plan', 'write_record', '{}', 'pending', 'ancienne-cle', 'date', 'date')
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        db.init_db()
+        conn = db.get_connection()
+        columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(actions)").fetchall()
+        }
+        row = conn.execute(
+            "SELECT plan_id, action_index FROM actions WHERE idempotency_key = 'ancienne-cle'"
+        ).fetchone()
+        conn.close()
+        self.assertIn("action_index", columns)
+        self.assertEqual(row["plan_id"], "ancien-plan")
+        self.assertEqual(row["action_index"], 1)
+
+    def test_identical_actions_in_different_plans_are_distinct(self):
+        tool_input = {
+            "record_type": "incident",
+            "subject": "Même contenu",
+            "payload": {"severity": "low"},
+        }
+        first = tools.execute_tool(
+            "write_record", tool_input, plan_id="plan-a", action_index=0
+        )
+        second = tools.execute_tool(
+            "write_record", tool_input, plan_id="plan-b", action_index=0
+        )
+        self.assertNotEqual(first["result"]["action_id"], second["result"]["action_id"])
+
+        conn = db.get_connection()
+        keys = conn.execute(
+            "SELECT idempotency_key FROM actions ORDER BY id"
+        ).fetchall()
+        conn.close()
+        self.assertEqual(len(keys), 2)
+        self.assertNotEqual(keys[0]["idempotency_key"], keys[1]["idempotency_key"])
+
+    def test_identical_actions_at_different_indexes_are_distinct(self):
+        tool_input = {
+            "record_type": "incident",
+            "subject": "Même contenu",
+            "payload": {"severity": "low"},
+        }
+        first = tools.execute_tool(
+            "write_record", tool_input, plan_id="plan-a", action_index=0
+        )
+        second = tools.execute_tool(
+            "write_record", tool_input, plan_id="plan-a", action_index=1
+        )
+        self.assertNotEqual(first["result"]["action_id"], second["result"]["action_id"])
+
+    def test_exact_same_action_is_an_idempotent_replay(self):
+        tool_input = {
+            "title": "Action idempotente",
+            "description": "Ne doit être créée qu'une fois",
+            "assignee": "Sophie",
+            "due_date": "2026-08-25",
+        }
+        first = tools.execute_tool(
+            "create_issue", tool_input, plan_id="plan-replay", action_index=3
+        )
+        replay = tools.execute_tool(
+            "create_issue", tool_input, plan_id="plan-replay", action_index=3
+        )
+        self.assertEqual(first["result"]["action_id"], replay["result"]["action_id"])
+        self.assertTrue(replay["idempotent_replay"])
+
+        tools.approve_pending_action(first["result"]["action_id"])
+        executed_replay = tools.execute_tool(
+            "create_issue", tool_input, plan_id="plan-replay", action_index=3
+        )
+        self.assertTrue(executed_replay["idempotent_replay"])
+        conn = db.get_connection()
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM issues").fetchone()[0], 1)
+        conn.close()
+
+    def test_approving_the_same_action_twice_has_one_effect(self):
+        proposed = tools.execute_tool(
+            "write_record",
+            {"record_type": "test", "subject": "Double clic", "payload": {}},
+            plan_id="plan-double",
+            action_index=0,
+        )
+        action_id = proposed["result"]["action_id"]
+        first = tools.approve_pending_action(action_id)
+        replay = tools.approve_pending_action(action_id)
+        self.assertTrue(first["ok"])
+        self.assertTrue(replay["idempotent_replay"])
+        conn = db.get_connection()
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM records").fetchone()[0], 1)
+        conn.close()
 
     def test_side_effect_waits_for_approval_and_is_idempotent(self):
         tool_input = {
@@ -196,7 +323,46 @@ class Palier3TestCase(unittest.TestCase):
 
         self.assertEqual(len(result["trace"]), 2)
         self.assertTrue(all(step["status"] == "pending" for step in result["trace"]))
+        self.assertEqual([step["action_index"] for step in result["trace"]], [0, 1])
         self.assertEqual(result["metrics"]["total_tokens"], 36)
+
+    def test_agent_action_index_continues_between_iterations(self):
+        from app import agent
+
+        first_response = SimpleNamespace(
+            content=[
+                SimpleNamespace(
+                    type="tool_use",
+                    id="tool-1",
+                    name="write_record",
+                    input={"record_type": "test", "subject": "Premier", "payload": {}},
+                )
+            ],
+            usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+        )
+        second_response = SimpleNamespace(
+            content=[
+                SimpleNamespace(
+                    type="tool_use",
+                    id="tool-2",
+                    name="write_record",
+                    input={"record_type": "test", "subject": "Second", "payload": {}},
+                )
+            ],
+            usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+        )
+        final_response = SimpleNamespace(
+            content=[SimpleNamespace(type="text", text="Deux propositions créées.")],
+            usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+        )
+        with patch.object(
+            agent.client.messages,
+            "create",
+            side_effect=[first_response, second_response, final_response],
+        ):
+            result = agent.run_agent("Prépare deux fiches")
+
+        self.assertEqual([step["action_index"] for step in result["trace"]], [0, 1])
 
     def test_agent_can_answer_without_tool(self):
         from app import agent
