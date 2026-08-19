@@ -169,6 +169,91 @@ class Palier4RegressionTestCase(unittest.TestCase):
         self.assertEqual(result["trace"][1]["status"], "pending")
         self.assertEqual(self.action_count(), 1)
 
+    def test_agent_rechecks_missing_creation_category_before_concluding(self):
+        first_response = SimpleNamespace(
+            content=[
+                SimpleNamespace(
+                    type="tool_use",
+                    id=f"tool-{index}",
+                    name=tool_name,
+                    input=tool_input,
+                )
+                for index, (tool_name, tool_input) in enumerate(
+                    (
+                        (
+                            "create_issue",
+                            {
+                                "title": "Préparer une arrivée",
+                                "description": "Finaliser les préparatifs.",
+                                "assignee": "Référente",
+                                "due_date": "2026-08-25",
+                            },
+                        ),
+                        (
+                            "send_message",
+                            {
+                                "channel": "équipe",
+                                "recipient": "Équipe",
+                                "content": "Une arrivée est prévue.",
+                            },
+                        ),
+                        (
+                            "write_record",
+                            {
+                                "record_type": "arrivée",
+                                "subject": "Nouvelle personne",
+                                "payload": {},
+                            },
+                        ),
+                        (
+                            "create_calendar_event",
+                            {
+                                "title": "Accueil",
+                                "start": "2026-08-25T09:00:00+02:00",
+                                "duration_min": 60,
+                                "attendees": ["Référente"],
+                            },
+                        ),
+                    )
+                )
+            ],
+            usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+        )
+        document_response = tool_response(
+            "document",
+            "generate_document",
+            {
+                "title": "Guide d'accueil",
+                "content": "# Guide\n\nInformations utiles.",
+                "filename": "guide-accueil.md",
+            },
+        )
+        responses = iter([first_response, document_response, text_response("Plan complet.")])
+        captured_second_turn: list[dict] = []
+
+        def next_response(**kwargs):
+            if captured_second_turn == [] and len(kwargs["messages"]) > 1:
+                captured_second_turn.extend(kwargs["messages"][-1]["content"])
+            return next(responses)
+
+        with patch.object(agent.client.messages, "create", side_effect=next_response):
+            result = agent.run_agent("Prépare complètement une arrivée dans l'équipe.")
+
+        reminder = next(
+            block["text"] for block in captured_second_turn if block["type"] == "text"
+        )
+        self.assertIn("generate_document", reminder)
+        self.assertEqual(
+            [step["tool"] for step in result["trace"]],
+            [
+                "create_issue",
+                "send_message",
+                "write_record",
+                "create_calendar_event",
+                "generate_document",
+            ],
+        )
+
     def test_valid_action_still_becomes_pending(self):
         result = tools.execute_tool(
             "write_record",

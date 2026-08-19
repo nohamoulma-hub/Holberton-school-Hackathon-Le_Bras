@@ -385,8 +385,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "name": "generate_document",
         "description": (
             "Propose la génération locale d'un document texte au format Markdown dans le dossier "
-            "files. Aucun PDF ou DOCX n'est produit. Effet de bord : nécessite une validation "
-            "humaine avant exécution."
+            "files. À utiliser lorsqu'un support écrit autonome est utile, par exemple un guide, "
+            "une checklist, un brief ou un compte rendu ; ce livrable est distinct d'un message "
+            "ou d'une fiche structurée. Aucun PDF ou DOCX n'est produit. Effet de bord : "
+            "nécessite une validation humaine avant exécution."
         ),
         "input_schema": {
             "type": "object",

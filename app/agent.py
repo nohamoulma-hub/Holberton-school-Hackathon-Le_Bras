@@ -23,6 +23,16 @@ client = anthropic.Anthropic()
 MAX_TOOL_ITERATIONS = 4
 MAX_TOOL_RESULT_CHARS = 6_000
 
+# Les cinq catégories de création du Palier 4 doivent être réexaminées avant la
+# conclusion. Cette liste décrit les capacités du produit, pas un scénario métier.
+CREATION_TOOL_CATEGORIES = {
+    "create_issue": "tâche",
+    "send_message": "communication",
+    "write_record": "fiche structurée",
+    "generate_document": "document utile",
+    "create_calendar_event": "événement calendrier",
+}
+
 # Tarif claude-sonnet-5 (USD par million de tokens), pour le coût affiché à l'écran.
 # À ajuster si le modèle change (variable `model` de messages.create ci-dessous).
 INPUT_PRICE_PER_MILLION_USD = 3.0
@@ -92,6 +102,33 @@ def _serialize_tool_result(result: dict[str, Any]) -> str:
         "preview": serialized[: MAX_TOOL_RESULT_CHARS - 200],
     }
     return json.dumps(summary, ensure_ascii=False)
+
+
+def _completion_check(
+    active_tools: list[dict[str, Any]], trace: list[dict[str, Any]]
+) -> str | None:
+    """Construit le rappel générique des catégories de création non utilisées."""
+    active_names = {tool["name"] for tool in active_tools}
+    used_names = {step["tool"] for step in trace}
+    remaining = [
+        (tool_name, category)
+        for tool_name, category in CREATION_TOOL_CATEGORIES.items()
+        if tool_name in active_names and tool_name not in used_names
+    ]
+    if not remaining:
+        return None
+
+    remaining_text = ", ".join(
+        f"{category} (`{tool_name}`)" for tool_name, category in remaining
+    )
+    return (
+        "Contrôle de complétude avant de conclure : les catégories de création "
+        f"suivantes n'ont pas encore été utilisées : {remaining_text}. "
+        "Réexamine chacune d'elles par rapport à l'intention complète de "
+        "l'utilisateur. Appelle maintenant chaque outil encore pertinent, notamment "
+        "si son résultat constitue un livrable distinct des actions déjà proposées. "
+        "N'ajoute toutefois aucune action sans rapport avec la demande."
+    )
 
 
 def _metrics(input_tokens: int, output_tokens: int, start: float) -> dict[str, Any]:
@@ -195,6 +232,9 @@ def run_agent(user_message: str) -> dict[str, Any]:
                 }
             )
 
+        completion_check = _completion_check(active_tools, trace)
+        if completion_check:
+            tool_results.append({"type": "text", "text": completion_check})
         messages.append({"role": "user", "content": tool_results})
 
     text = "Trop d'itérations d'outils sans conclusion, j'arrête ici."
