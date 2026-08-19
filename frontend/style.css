@@ -156,3 +156,37 @@ button {
 .action-error {
     color: #c53030;
 }
+
+.tool-toggles {
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid #ddd;
+}
+
+.tool-toggles summary {
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.tool-toggles-hint {
+    color: #555;
+    font-size: 0.9rem;
+    margin: 8px 0;
+}
+
+.tool-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+}
+
+.tool-toggle-name {
+    font-family: monospace;
+}
+
+.tool-toggle-error {
+    display: block;
+    color: #c53030;
+    font-size: 0.85rem;
+}

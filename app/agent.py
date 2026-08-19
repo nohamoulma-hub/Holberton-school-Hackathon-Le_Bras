@@ -8,7 +8,7 @@ from typing import Any
 import anthropic
 from dotenv import load_dotenv
 
-from app.tools import TOOL_DEFINITIONS, execute_tool
+from app.tools import execute_tool, get_active_tool_definitions
 
 load_dotenv()
 
@@ -65,21 +65,6 @@ def _metrics(input_tokens: int, output_tokens: int, start: float) -> dict[str, A
     }
 
 
-def _active_tool_definitions() -> list[dict[str, Any]]:
-    """Filtre les outils désactivés via DISABLED_TOOLS dans .env (liste séparée par des virgules).
-
-    Recharge .env à chaque appel pour permettre de débrancher un outil en démo sans redémarrer
-    le serveur : éditer .env, sauvegarder, relancer la même requête.
-    """
-    load_dotenv(override=True)
-    disabled = {
-        name.strip() for name in os.environ.get("DISABLED_TOOLS", "").split(",") if name.strip()
-    }
-    if not disabled:
-        return TOOL_DEFINITIONS
-    return [tool for tool in TOOL_DEFINITIONS if tool["name"] not in disabled]
-
-
 def run_agent(user_message: str) -> dict[str, Any]:
     """Boucle agent avec tool calling natif Claude.
 
@@ -92,7 +77,7 @@ def run_agent(user_message: str) -> dict[str, Any]:
     output_tokens = 0
     trace: list[dict[str, Any]] = []
     messages: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
-    active_tools = _active_tool_definitions()
+    active_tools = get_active_tool_definitions()
 
     for _ in range(MAX_TOOL_ITERATIONS):
         response = client.messages.create(

@@ -3,6 +3,7 @@ const messageInput = document.getElementById("message");
 const agentResponse = document.getElementById("agent-response");
 const toolTraceList = document.getElementById("tool-trace-list");
 const requestMetrics = document.getElementById("request-metrics");
+const toolTogglesList = document.getElementById("tool-toggles-list");
 
 function formatJson(value) {
     return JSON.stringify(value, null, 2);
@@ -252,6 +253,79 @@ function renderMetrics(metrics) {
         "coût non configuré",
     ].join(" — ");
 }
+
+function renderToolToggles(tools) {
+    toolTogglesList.replaceChildren();
+
+    if (!Array.isArray(tools) || tools.length === 0) {
+        const emptyMessage = document.createElement("p");
+        emptyMessage.textContent = "Aucun outil déclaré.";
+        toolTogglesList.appendChild(emptyMessage);
+        return;
+    }
+
+    tools.forEach((tool) => {
+        const row = document.createElement("label");
+        row.className = "tool-toggle";
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = tool.enabled;
+
+        const name = document.createElement("span");
+        name.className = "tool-toggle-name";
+        name.textContent = tool.name;
+
+        const errorElement = document.createElement("span");
+        errorElement.className = "tool-toggle-error";
+
+        checkbox.addEventListener("change", async () => {
+            const nextEnabled = checkbox.checked;
+            checkbox.disabled = true;
+            errorElement.textContent = "";
+
+            try {
+                const response = await fetch(`/tools/${encodeURIComponent(tool.name)}/toggle`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({enabled: nextEnabled}),
+                });
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || "Erreur du serveur");
+                }
+            } catch (error) {
+                checkbox.checked = !nextEnabled;
+                errorElement.textContent = `Erreur : ${error.message}`;
+            } finally {
+                checkbox.disabled = false;
+            }
+        });
+
+        row.append(checkbox, name);
+        toolTogglesList.append(row, errorElement);
+    });
+}
+
+async function loadToolToggles() {
+    try {
+        const response = await fetch("/tools");
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.detail || "Erreur du serveur");
+        }
+
+        renderToolToggles(data.tools);
+    } catch (error) {
+        toolTogglesList.textContent = `Erreur de chargement des outils : ${error.message}`;
+    }
+}
+
+loadToolToggles();
 
 form.addEventListener("submit", async (event) => {
     event.preventDefault();

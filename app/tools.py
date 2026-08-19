@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import re
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -457,6 +458,44 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
 ]
+
+
+_TOOL_NAMES: frozenset[str] = frozenset(tool["name"] for tool in TOOL_DEFINITIONS)
+
+# État en mémoire des outils désactivés (démo palier 3 : "je débranche un outil"), piloté
+# depuis le front sans redémarrer le serveur. Réinitialisé au démarrage à partir de
+# DISABLED_TOOLS dans .env, pour partir avec un état connu.
+_disabled_tools: set[str] = {
+    name.strip() for name in os.environ.get("DISABLED_TOOLS", "").split(",") if name.strip()
+} & set(_TOOL_NAMES)
+
+
+def list_tool_status() -> list[dict[str, Any]]:
+    """Liste chaque outil connu avec son état actif/inactif, pour le panneau du front."""
+    return [
+        {
+            "name": tool["name"],
+            "description": tool["description"],
+            "enabled": tool["name"] not in _disabled_tools,
+        }
+        for tool in TOOL_DEFINITIONS
+    ]
+
+
+def set_tool_enabled(tool_name: str, enabled: bool) -> dict[str, Any]:
+    """Active ou désactive un outil pour les prochains appels de l'agent."""
+    if tool_name not in _TOOL_NAMES:
+        raise ToolError(f"Outil inconnu : {tool_name}")
+    if enabled:
+        _disabled_tools.discard(tool_name)
+    else:
+        _disabled_tools.add(tool_name)
+    return {"name": tool_name, "enabled": enabled}
+
+
+def get_active_tool_definitions() -> list[dict[str, Any]]:
+    """Sous-ensemble de TOOL_DEFINITIONS effectivement proposé à Claude en ce moment."""
+    return [tool for tool in TOOL_DEFINITIONS if tool["name"] not in _disabled_tools]
 
 
 def _idempotency_key(
