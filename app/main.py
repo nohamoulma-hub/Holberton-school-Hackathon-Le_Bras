@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.agent import run_agent
 from app.db import get_recent_audit_log, init_db
+from app.tools import approve_pending_action, reject_pending_action
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -40,6 +41,24 @@ def trace(limit: int = 20) -> dict:
     """Journal des derniers appels d'outils (idempotency_key, input, résultat/erreur) — pour
     montrer la séquence sans avoir besoin d'un print live."""
     return {"calls": get_recent_audit_log(limit)}
+
+
+@app.post("/actions/{action_id}/approve")
+def approve_action(action_id: int) -> dict:
+    """Exécute une action uniquement après cette validation humaine explicite."""
+    result = approve_pending_action(action_id)
+    if not result["ok"]:
+        raise HTTPException(status_code=409, detail=result["error"])
+    return result
+
+
+@app.post("/actions/{action_id}/reject")
+def reject_action(action_id: int) -> dict:
+    """Refuse une action en attente sans provoquer son effet de bord."""
+    result = reject_pending_action(action_id)
+    if not result["ok"]:
+        raise HTTPException(status_code=409, detail=result["error"])
+    return result
 
 
 frontend_dir = Path(__file__).resolve().parent.parent / "frontend"

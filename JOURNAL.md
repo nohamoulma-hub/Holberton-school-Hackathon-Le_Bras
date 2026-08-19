@@ -37,4 +37,12 @@ Tests manuels validés : l'agent choisit le bon outil selon la demande, répond 
 
 Bug trouvé et corrigé en cours de route : `app/agent.py` créait le client Anthropic au chargement du module, mais `main.py` l'importait avant d'appeler `load_dotenv()` — la clé API n'était donc jamais chargée à temps, d'où des 500 systématiques sur `/chat`. Corrigé en rendant `agent.py` autonome sur le chargement de son `.env`.
 
-**Reste à faire pour le checkpoint palier 3** : un panneau debug dans le front pour afficher la trace visuellement (actuellement disponible via `GET /trace` ou le champ `trace` de `/chat`, mais pas encore affiché dans l'UI) ; la carte bonus "coût affiché" (tokens/coût/latence par exécution) n'est pas encore implémentée.
+**État à la fin de cette étape** : le panneau de trace et les métriques n'étaient pas encore dans le frontend ; ils ont été ajoutés lors de la finalisation décrite dans l'entrée suivante.
+
+## Entrée 8 — 2026-08-18, finalisation du Palier 3
+
+Demandé à l'agent de compléter les cinq outils manquants (`write_record`, `generate_document`, `create_calendar_event`, `list_pending_actions`, `undo_last_action`) sans réécrire la boucle Anthropic existante. Les nouvelles données sont stockées dans des tables SQLite créées sans supprimer l'existant ; les messages et documents restent dans `outbox/` et `files/`. Les sept outils sont désormais décrits et enregistrés, les résultats envoyés au LLM sont limités en taille tout en restant du JSON valide, et les tokens ainsi que la latence globale sont exposés sans inventer de tarif. L'idempotence distingue chaque action avec `plan_id`, `action_index`, Tool et arguments.
+
+Pour éviter l'exécution silencieuse d'effets de bord, le choix retenu est une protection minimale : Claude crée une action `pending`, puis le backend ne l'exécute qu'après approbation explicite ; un refus ne déclenche aucun outil. La lecture des actions en attente reste immédiate. L'undo ne cible que les actions locales exécutées et réversibles et ne peut pas être appliqué deux fois. Le frontend affiche une trace repliable avec outil, arguments, statut, résultat ou erreur et latence, ainsi que les boutons d'approbation et de refus.
+
+Tests effectués : 17 tests automatisés isolés couvrant les sept outils, la migration SQLite, les variantes de clé d'idempotence, approbation/refus, audit, erreur, undo, plusieurs `tool_use` et réponse sans outil ; construction Docker réussie ; vérification HTTP de `/health`, `/chat`, `/trace`, `/docs` et de l'interface. Des appels Claude réels ont aussi validé le hors périmètre (« Fais-moi un sandwich. »), une demande météo non anticipée, la question sur les capacités et une demande multi-outils restant en attente de validation.

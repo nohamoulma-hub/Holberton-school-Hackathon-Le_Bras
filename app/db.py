@@ -38,6 +38,58 @@ def init_db() -> None:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            record_type TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS calendar_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            start TEXT NOT NULL,
+            duration_min INTEGER NOT NULL,
+            attendees_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_id TEXT NOT NULL,
+            action_index INTEGER NOT NULL,
+            tool_name TEXT NOT NULL,
+            input_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            idempotency_key TEXT UNIQUE NOT NULL,
+            output_json TEXT,
+            error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    action_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(actions)").fetchall()
+    }
+    if "action_index" not in action_columns:
+        conn.execute("ALTER TABLE actions ADD COLUMN action_index INTEGER")
+    conn.execute("UPDATE actions SET action_index = id WHERE action_index IS NULL")
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_actions_plan_status
+        ON actions (plan_id, status)
+        """
+    )
     conn.commit()
     conn.close()
 
@@ -46,7 +98,7 @@ def get_recent_audit_log(limit: int = 20) -> list[dict]:
     conn = get_connection()
     rows = conn.execute(
         """
-        SELECT tool_name, input_json, output_json, status, error, created_at
+        SELECT id, idempotency_key, tool_name, input_json, output_json, status, error, created_at
         FROM audit_log
         ORDER BY created_at DESC
         LIMIT ?
