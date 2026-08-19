@@ -2,7 +2,7 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from app import db, tools
+from app import db, history, tools
 from app.main import app
 from postgres_test_case import create_test_schema, drop_test_schema
 
@@ -60,7 +60,11 @@ class CalendarEventsTestCase(unittest.TestCase):
 
         response = self.client.get(
             "/calendar/events",
-            params={"start": "2026-08-01", "end": "2026-09-01"},
+            params={
+                "start": "2026-08-01",
+                "end": "2026-09-01",
+                "plan_id": "plan-calendar",
+            },
         )
         self.assertEqual(response.status_code, 200)
         events = response.json()["events"]
@@ -87,10 +91,10 @@ class CalendarEventsTestCase(unittest.TestCase):
         tools.approve_pending_action(september_id)
 
         august = self.client.get(
-            "/calendar/events?start=2026-08-01&end=2026-09-01"
+            "/calendar/events?start=2026-08-01&end=2026-09-01&plan_id=plan-calendar"
         )
         september = self.client.get(
-            "/calendar/events?start=2026-09-01&end=2026-10-01"
+            "/calendar/events?start=2026-09-01&end=2026-10-01&plan_id=plan-calendar"
         )
         self.assertEqual(
             [event["title"] for event in august.json()["events"]],
@@ -122,15 +126,94 @@ class CalendarEventsTestCase(unittest.TestCase):
         )
         tools.reject_pending_action(rejected_id)
 
+        self.assertEqual(
+            self.client.get(
+                "/calendar/events?plan_id=plan-calendar"
+            ).json()["events"],
+            [],
+        )
+    def test_delete_event_removes_it_and_cancels_its_action(self):
+        action_id = self.propose_event(
+            0,
+            "Événement à supprimer",
+            "2026-08-25T10:00:00+02:00",
+            ["Sophie"],
+        )
+        approved = tools.approve_pending_action(action_id)
+        event_id = approved["result"]["event_id"]
+
+        response = self.client.delete(
+            f"/calendar/events/{event_id}?plan_id=plan-calendar"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "deleted")
+        self.assertEqual(response.json()["action_id"], action_id)
+        self.assertEqual(
+            self.client.get(
+                "/calendar/events?plan_id=plan-calendar"
+            ).json()["events"],
+            [],
+        )
         conn = db.get_connection()
         try:
-            count = conn.execute(
-                "SELECT COUNT(*) AS total FROM calendar_events"
-            ).fetchone()["total"]
+            action_status = conn.execute(
+                "SELECT status FROM actions WHERE id = %s", (action_id,)
+            ).fetchone()["status"]
+            audit_status = conn.execute(
+                "SELECT status FROM audit_log WHERE tool_name = 'create_calendar_event'"
+            ).fetchone()["status"]
         finally:
             conn.close()
-        self.assertEqual(count, 0)
+        self.assertEqual(action_status, "cancelled")
+        self.assertEqual(audit_status, "cancelled")
+
+    def test_delete_unknown_event_returns_404(self):
+        response = self.client.delete("/calendar/events/999999")
+        self.assertEqual(response.status_code, 404)
+
+    def test_anonymous_calendar_requires_a_known_local_plan(self):
+        action_id = self.propose_event(
+            0,
+            "Événement anonyme",
+            "2026-08-25T10:00:00+02:00",
+            ["Sophie"],
+        )
+        tools.approve_pending_action(action_id)
+
         self.assertEqual(self.client.get("/calendar/events").json()["events"], [])
+        own_events = self.client.get(
+            "/calendar/events?plan_id=plan-calendar"
+        ).json()["events"]
+        self.assertEqual([event["title"] for event in own_events], ["Événement anonyme"])
+
+    def test_connected_calendar_is_scoped_to_its_account(self):
+        first_user = self.client.post(
+            "/auth/register",
+            json={"email": "calendar-one@example.com", "password": "mot-de-passe"},
+        ).json()["user"]
+        first_action = self.propose_event(
+            0,
+            "Événement du premier compte",
+            "2026-08-25T10:00:00+02:00",
+            ["Alice"],
+        )
+        history.link_actions_to_user(first_user["id"], [{"action_id": first_action}])
+        first_result = tools.approve_pending_action(first_action)
+        first_event_id = first_result["result"]["event_id"]
+        self.assertEqual(len(self.client.get("/calendar/events").json()["events"]), 1)
+
+        self.client.post("/auth/logout")
+        self.client.post(
+            "/auth/register",
+            json={"email": "calendar-two@example.com", "password": "mot-de-passe"},
+        )
+
+        self.assertEqual(self.client.get("/calendar/events").json()["events"], [])
+        self.assertEqual(
+            self.client.delete(f"/calendar/events/{first_event_id}").status_code,
+            404,
+        )
 
 
 if __name__ == "__main__":

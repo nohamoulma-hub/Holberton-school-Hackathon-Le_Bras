@@ -969,6 +969,37 @@ summary:focus-visible {
     font-size: 0.78rem;
 }
 
+.calendar-event-delete {
+    grid-column: 1 / -1;
+    justify-self: end;
+    padding: 7px 11px;
+    color: var(--danger);
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 700;
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+    border-radius: 9px;
+    cursor: pointer;
+}
+
+.calendar-event-delete:hover:not(:disabled),
+.calendar-event-delete:focus-visible {
+    color: #fff;
+    background: var(--danger);
+    outline: none;
+}
+
+.calendar-event-delete:disabled {
+    cursor: wait;
+    opacity: 0.55;
+}
+
+.calendar-event-item .calendar-event-delete-error {
+    color: var(--danger);
+    text-align: right;
+}
+
 .management-view {
     flex: 1 1 auto;
     min-height: 0;
@@ -1190,6 +1221,35 @@ summary:focus-visible {
     background: var(--surface-solid);
     border: 1px solid var(--border-soft);
     border-radius: 999px;
+}
+
+.history-delete {
+    margin-top: 14px;
+    padding: 8px 11px;
+    color: var(--danger);
+    font: inherit;
+    font-size: 0.74rem;
+    font-weight: 700;
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+    border-radius: 9px;
+    cursor: pointer;
+}
+
+.history-delete:hover:not(:disabled),
+.history-delete:focus-visible {
+    color: #fff;
+    background: var(--danger);
+    outline: none;
+}
+
+.history-delete:disabled {
+    cursor: wait;
+    opacity: 0.55;
+}
+
+.history-item .history-delete-error {
+    color: var(--danger);
 }
 
 .history-empty,

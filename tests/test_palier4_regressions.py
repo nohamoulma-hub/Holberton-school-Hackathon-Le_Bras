@@ -225,7 +225,9 @@ class Palier4RegressionTestCase(unittest.TestCase):
             plan_id="plan-calendrier",
         )
         tools.approve_pending_action(pending["result"]["action_id"])
-        response = self.client.get("/calendar/events?start=2026-08-01&end=2026-08-31")
+        response = self.client.get(
+            "/calendar/events?start=2026-08-01&end=2026-08-31&plan_id=plan-calendrier"
+        )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["events"][0]["title"], "Bilan")
 

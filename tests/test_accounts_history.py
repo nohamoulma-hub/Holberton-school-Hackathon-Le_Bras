@@ -73,6 +73,14 @@ class AccountsAndHistoryTestCase(unittest.TestCase):
         self.assertEqual(actions.status_code, 200)
         self.assertEqual(actions.json()["actions"][0]["id"], action_id)
 
+        removed = self.client.delete(f"/history/accepted-actions/{action_id}")
+        self.assertEqual(removed.status_code, 200)
+        self.assertEqual(
+            self.client.get("/history/accepted-actions").json()["actions"],
+            [],
+        )
+        self.assertEqual(tools.approve_pending_action(action_id)["status"], "executed")
+
         self.client.post("/auth/logout")
         self.assertEqual(self.client.get("/history/conversations").status_code, 401)
         self.assertEqual(self.client.get("/history/accepted-actions").status_code, 401)
@@ -87,6 +95,29 @@ class AccountsAndHistoryTestCase(unittest.TestCase):
             json={"email": "short@example.com", "password": "court"},
         )
         self.assertEqual(short_password.status_code, 422)
+
+    def test_account_cannot_hide_another_users_accepted_action(self):
+        first = self.client.post(
+            "/auth/register",
+            json={"email": "first@example.com", "password": "mot-de-passe"},
+        ).json()["user"]
+        proposed = tools.execute_tool(
+            "write_record",
+            {"record_type": "test", "subject": "Privé", "payload": {}},
+            plan_id="plan-private-action",
+        )
+        action_id = proposed["result"]["action_id"]
+        history.link_actions_to_user(first["id"], [{"action_id": action_id}])
+        tools.approve_pending_action(action_id)
+        self.client.post("/auth/logout")
+        self.client.post(
+            "/auth/register",
+            json={"email": "second@example.com", "password": "mot-de-passe"},
+        )
+
+        response = self.client.delete(f"/history/accepted-actions/{action_id}")
+
+        self.assertEqual(response.status_code, 404)
 
 
 if __name__ == "__main__":

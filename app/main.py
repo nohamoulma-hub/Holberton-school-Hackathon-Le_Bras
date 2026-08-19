@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -19,9 +19,10 @@ from app.accounts import (
     delete_session,
     get_user_from_session,
 )
-from app.calendar_events import list_calendar_events
+from app.calendar_events import delete_calendar_event, list_calendar_events
 from app.db import database_is_ready, get_recent_audit_log, init_db
 from app.history import (
+    hide_accepted_action,
     link_actions_to_user,
     list_accepted_actions,
     list_conversations,
@@ -147,13 +148,54 @@ def accepted_action_history(request: Request, limit: int = 50) -> dict:
     return {"actions": list_accepted_actions(user["id"], limit)}
 
 
-@app.get("/calendar/events")
-def calendar_events(start: date | None = None, end: date | None = None) -> dict:
-    """Expose les événements PostgreSQL exécutés, avec un filtrage de période optionnel."""
+@app.delete("/history/accepted-actions/{action_id}")
+def remove_accepted_action_history(action_id: int, request: Request) -> dict:
+    """Masque une action uniquement dans l'historique du compte connecté."""
+    user = current_user(request)
     try:
-        return {"events": list_calendar_events(start, end)}
+        return hide_accepted_action(user["id"], action_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/calendar/events")
+def calendar_events(
+    request: Request,
+    start: date | None = None,
+    end: date | None = None,
+    plan_id: list[str] = Query(default=[]),
+) -> dict:
+    """Expose les événements PostgreSQL exécutés, avec un filtrage de période optionnel."""
+    user = current_user(request, required=False)
+    try:
+        return {
+            "events": list_calendar_events(
+                start,
+                end,
+                user_id=user["id"] if user is not None else None,
+                plan_ids=plan_id,
+            )
+        }
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.delete("/calendar/events/{event_id}")
+def remove_calendar_event(
+    event_id: int,
+    request: Request,
+    plan_id: str | None = None,
+) -> dict:
+    """Supprime un événement après une confirmation explicite dans le frontend."""
+    user = current_user(request, required=False)
+    try:
+        return delete_calendar_event(
+            event_id,
+            user_id=user["id"] if user is not None else None,
+            plan_id=plan_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/plans/latest")

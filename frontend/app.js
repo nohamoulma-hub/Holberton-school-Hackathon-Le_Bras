@@ -52,6 +52,8 @@ const requestStatus = document.getElementById("request-status");
 
 const THEME_STORAGE_KEY = "le-bras-theme";
 const CURRENT_PLAN_STORAGE_KEY = "le-bras-current-plan";
+const ANONYMOUS_PLAN_HISTORY_KEY = "le-bras-anonymous-plan-history";
+const ANONYMOUS_HIDDEN_ACTIONS_KEY = "le-bras-anonymous-hidden-actions";
 const today = new Date();
 today.setHours(0, 0, 0, 0);
 let currentCalendarMonth = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -62,6 +64,51 @@ let calendarEventsError = "";
 let calendarEventsRequestId = 0;
 let currentUser = null;
 let authMode = "login";
+
+function readLocalArray(storageKey) {
+    try {
+        const value = JSON.parse(localStorage.getItem(storageKey) || "[]");
+        return Array.isArray(value) ? value : [];
+    } catch (error) {
+        console.warn(`Impossible de lire ${storageKey}.`, error);
+        return [];
+    }
+}
+
+function writeLocalArray(storageKey, values) {
+    try {
+        localStorage.setItem(storageKey, JSON.stringify(values));
+    } catch (error) {
+        console.warn(`Impossible d'enregistrer ${storageKey}.`, error);
+    }
+}
+
+function anonymousPlanIds() {
+    return readLocalArray(ANONYMOUS_PLAN_HISTORY_KEY)
+        .filter((value) => typeof value === "string" && value)
+        .slice(0, 50);
+}
+
+function rememberAnonymousPlan(planId) {
+    const planIds = anonymousPlanIds().filter((value) => value !== planId);
+    writeLocalArray(ANONYMOUS_PLAN_HISTORY_KEY, [planId, ...planIds].slice(0, 50));
+}
+
+async function loadAnonymousPlans() {
+    const plans = await Promise.all(anonymousPlanIds().map(async (planId) => {
+        try {
+            const response = await fetch(`/plans/${encodeURIComponent(planId)}`);
+            if (!response.ok) {
+                return null;
+            }
+            return await response.json();
+        } catch (error) {
+            console.warn(`Impossible de restaurer le plan anonyme ${planId}.`, error);
+            return null;
+        }
+    }));
+    return plans.filter(Boolean);
+}
 
 const monthFormatter = new Intl.DateTimeFormat("fr-FR", {
     month: "long",
@@ -217,7 +264,51 @@ function renderSelectedDateEvents() {
             ? `Participants : ${event.attendees.join(", ")}`
             : "Aucun participant";
 
-        item.append(title, schedule, attendees);
+        const deleteButton = document.createElement("button");
+        deleteButton.type = "button";
+        deleteButton.className = "calendar-event-delete";
+        deleteButton.textContent = "Supprimer";
+        deleteButton.setAttribute("aria-label", `Supprimer l'événement ${event.title}`);
+
+        const deleteError = document.createElement("p");
+        deleteError.className = "calendar-event-delete-error";
+        deleteError.setAttribute("role", "alert");
+
+        deleteButton.addEventListener("click", async () => {
+            const confirmed = window.confirm(
+                `Supprimer définitivement l'événement « ${event.title} » ?`,
+            );
+            if (!confirmed) {
+                return;
+            }
+
+            deleteButton.disabled = true;
+            deleteError.textContent = "";
+            try {
+                const deleteUrl = new URL(
+                    `/calendar/events/${event.id}`,
+                    window.location.origin,
+                );
+                if (!currentUser && event.plan_id) {
+                    deleteUrl.searchParams.set("plan_id", event.plan_id);
+                }
+                const response = await fetch(`${deleteUrl.pathname}${deleteUrl.search}`, {
+                    method: "DELETE",
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.detail || "Suppression impossible");
+                }
+                calendarEvents = calendarEvents.filter((itemEvent) => itemEvent.id !== event.id);
+                requestStatus.textContent = `Événement « ${event.title} » supprimé`;
+                renderCalendar();
+            } catch (error) {
+                deleteError.textContent = `Erreur : ${error.message}`;
+                deleteButton.disabled = false;
+            }
+        });
+
+        item.append(title, schedule, attendees, deleteButton, deleteError);
         calendarEventsList.appendChild(item);
     });
 }
@@ -240,6 +331,9 @@ async function loadCalendarEvents() {
             start: dateKey(start),
             end: dateKey(end),
         });
+        if (!currentUser) {
+            anonymousPlanIds().forEach((planId) => parameters.append("plan_id", planId));
+        }
         const response = await fetch(`/calendar/events?${parameters.toString()}`);
         const data = await response.json();
         if (!response.ok) {
@@ -1114,6 +1208,10 @@ async function loadCurrentUser() {
         const response = await fetch("/auth/me");
         if (!response.ok) {
             updateAuthInterface(null);
+            const currentPlanId = localStorage.getItem(CURRENT_PLAN_STORAGE_KEY);
+            if (currentPlanId) {
+                rememberAnonymousPlan(currentPlanId);
+            }
             return;
         }
         const data = await response.json();
@@ -1130,6 +1228,49 @@ function historyMessage(container, className, message) {
     element.className = className;
     element.textContent = message;
     container.appendChild(element);
+}
+
+async function removeAcceptedHistoryEntry(action, item, button, errorElement) {
+    const confirmed = window.confirm(
+        "Retirer cette action de l'historique ? Son effet déjà exécuté ne sera pas annulé.",
+    );
+    if (!confirmed) {
+        return;
+    }
+
+    button.disabled = true;
+    errorElement.textContent = "";
+    try {
+        if (currentUser) {
+            const response = await fetch(`/history/accepted-actions/${action.id}`, {
+                method: "DELETE",
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.detail || "Suppression impossible");
+            }
+        } else {
+            const hiddenIds = readLocalArray(ANONYMOUS_HIDDEN_ACTIONS_KEY)
+                .map(String)
+                .filter((value) => value !== String(action.id));
+            writeLocalArray(
+                ANONYMOUS_HIDDEN_ACTIONS_KEY,
+                [String(action.id), ...hiddenIds].slice(0, 500),
+            );
+        }
+        item.remove();
+        if (!acceptedActionsList.querySelector(".history-item")) {
+            historyMessage(
+                acceptedActionsList,
+                "history-empty",
+                "Aucune action acceptée pour le moment.",
+            );
+        }
+        requestStatus.textContent = "Action retirée de l'historique";
+    } catch (error) {
+        errorElement.textContent = `Erreur : ${error.message}`;
+        button.disabled = false;
+    }
 }
 
 function renderAcceptedActions(actions) {
@@ -1162,7 +1303,19 @@ function renderAcceptedActions(actions) {
             badge.textContent = value;
             meta.appendChild(badge);
         });
-        item.append(header, description, meta);
+
+        const deleteButton = document.createElement("button");
+        deleteButton.type = "button";
+        deleteButton.className = "history-delete";
+        deleteButton.textContent = "Supprimer de l'historique";
+        const deleteError = document.createElement("p");
+        deleteError.className = "history-delete-error";
+        deleteError.setAttribute("role", "alert");
+        deleteButton.addEventListener("click", () => {
+            removeAcceptedHistoryEntry(action, item, deleteButton, deleteError);
+        });
+
+        item.append(header, description, meta, deleteButton, deleteError);
         acceptedActionsList.appendChild(item);
     });
 }
@@ -1204,55 +1357,78 @@ function renderConversationHistory(conversations) {
 }
 
 async function loadAcceptedActions() {
-    if (!currentUser) {
-        openAuthView();
-        return;
-    }
     historyMessage(acceptedActionsList, "history-loading", "Chargement de l’historique...");
     try {
-        const response = await fetch("/history/accepted-actions");
-        const data = await response.json();
-        if (!response.ok) {
-            throw new Error(data.detail || "Erreur du serveur");
+        if (currentUser) {
+            const response = await fetch("/history/accepted-actions");
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.detail || "Erreur du serveur");
+            }
+            renderAcceptedActions(data.actions);
+            return;
         }
-        renderAcceptedActions(data.actions);
+
+        const hiddenIds = new Set(
+            readLocalArray(ANONYMOUS_HIDDEN_ACTIONS_KEY).map(String),
+        );
+        const plans = await loadAnonymousPlans();
+        const actions = plans.flatMap((plan) => (plan.actions || [])
+            .filter((action) => action.status === "executed")
+            .filter((action) => !hiddenIds.has(String(action.action_id)))
+            .map((action) => ({
+                id: action.action_id,
+                plan_id: plan.plan_id,
+                tool_name: action.tool,
+                input: action.input,
+                output: action.output,
+                status: action.status,
+                created_at: action.created_at,
+                updated_at: action.updated_at,
+            })));
+        actions.sort((first, second) => (
+            new Date(second.updated_at).getTime() - new Date(first.updated_at).getTime()
+        ));
+        renderAcceptedActions(actions);
     } catch (error) {
         historyMessage(acceptedActionsList, "history-error", error.message);
     }
 }
 
 async function openAcceptedActions() {
-    if (!currentUser) {
-        openAuthView();
-        return;
-    }
     showManagementView(acceptedActionsView, acceptedActionsToggle);
     await loadAcceptedActions();
 }
 
 async function loadConversationHistory() {
-    if (!currentUser) {
-        openAuthView();
-        return;
-    }
     historyMessage(conversationHistoryList, "history-loading", "Chargement de l’historique...");
     try {
-        const response = await fetch("/history/conversations");
-        const data = await response.json();
-        if (!response.ok) {
-            throw new Error(data.detail || "Erreur du serveur");
+        if (currentUser) {
+            const response = await fetch("/history/conversations");
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.detail || "Erreur du serveur");
+            }
+            renderConversationHistory(data.conversations);
+            return;
         }
-        renderConversationHistory(data.conversations);
+
+        const plans = await loadAnonymousPlans();
+        const conversations = plans.map((plan) => ({
+            id: plan.plan_id,
+            plan_id: plan.plan_id,
+            user_message: plan.user_request,
+            agent_response: plan.response,
+            metrics: plan.metrics,
+            created_at: plan.created_at,
+        }));
+        renderConversationHistory(conversations);
     } catch (error) {
         historyMessage(conversationHistoryList, "history-error", error.message);
     }
 }
 
 async function openConversationHistory() {
-    if (!currentUser) {
-        openAuthView();
-        return;
-    }
     showManagementView(conversationHistoryView, conversationHistoryToggle);
     await loadConversationHistory();
 }
@@ -1427,6 +1603,9 @@ form.addEventListener("submit", async (event) => {
 
         if (data.plan_id) {
             localStorage.setItem(CURRENT_PLAN_STORAGE_KEY, data.plan_id);
+            if (!currentUser) {
+                rememberAnonymousPlan(data.plan_id);
+            }
         }
         completeAgentMessage(agentView, data);
         requestStatus.textContent = "Réponse reçue";

@@ -56,6 +56,7 @@ flowchart LR
 - **Agent** : appelle Claude Sonnet 5 avec la liste des Tools disponibles et traite ses `tool_use`. Le même agent et les mêmes Tools servent quel que soit le type d'intention reçue.
 - **Outils** : chacun est un adaptateur générique avec effet de bord isolé, appelé uniquement par l'Executor après validation. Aucun tool n'est spécifique à un seul scénario métier.
 - **Stockage** : PostgreSQL contient `users`, `sessions`, `plans`, `conversations`, `actions`, `action_owners`, `audit_log`, `issues`, `records` et `calendar_events`. Les plans utilisent `processing`, `pending`, `completed` ou `error` ; les actions utilisent `pending`, `executing`, `executed`, `rejected`, `error` ou `cancelled`.
+- **Isolation** : le calendrier et les historiques connectés sont filtrés par `user_id`. Sans compte, le navigateur conserve localement les identifiants aléatoires de ses propres plans et n'interroge que ceux-ci.
 - **Persistance fichier** : les volumes Docker `files_data` et `outbox_data` conservent documents et messages lors d'une recréation du conteneur `app`.
 
 ## Endpoints REST actuels
@@ -65,7 +66,7 @@ flowchart LR
 - Plans : `GET /plans/{plan_id}`, `GET /plans/latest`.
 - Outils : `GET /tools`, `POST /tools/{tool_name}/toggle`.
 - Comptes : `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`.
-- Historique et calendrier : `GET /history/conversations`, `GET /history/accepted-actions`, `GET /calendar/events`.
+- Historique et calendrier : `GET /history/conversations`, `GET /history/accepted-actions`, `DELETE /history/accepted-actions/{action_id}`, `GET /calendar/events`, `DELETE /calendar/events/{event_id}`.
 
 ## Outils de l'agent
 

@@ -91,7 +91,9 @@ def list_accepted_actions(user_id: int, limit: int = 50) -> list[dict[str, Any]]
                    actions.output_json, actions.status, actions.created_at, actions.updated_at
             FROM action_owners
             JOIN actions ON actions.id = action_owners.action_id
-            WHERE action_owners.user_id = %s AND actions.status = 'executed'
+            WHERE action_owners.user_id = %s
+              AND action_owners.hidden_at IS NULL
+              AND actions.status = 'executed'
             ORDER BY actions.updated_at DESC
             LIMIT %s
             """,
@@ -106,3 +108,29 @@ def list_accepted_actions(user_id: int, limit: int = 50) -> list[dict[str, Any]]
         item["output"] = json.loads(item.pop("output_json")) if item["output_json"] else None
         actions.append(item)
     return actions
+
+
+def hide_accepted_action(user_id: int, action_id: int) -> dict[str, Any]:
+    """Masque une action de l'historique du compte sans annuler son effet métier."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            UPDATE action_owners
+            SET hidden_at = %s
+            FROM actions
+            WHERE action_owners.action_id = actions.id
+              AND action_owners.user_id = %s
+              AND action_owners.action_id = %s
+              AND action_owners.hidden_at IS NULL
+              AND actions.status = 'executed'
+            RETURNING action_owners.action_id
+            """,
+            (datetime.now(timezone.utc), user_id, action_id),
+        ).fetchone()
+        conn.commit()
+    finally:
+        conn.close()
+    if row is None:
+        raise ValueError(f"Action introuvable dans cet historique : {action_id}")
+    return {"action_id": action_id, "status": "hidden"}

@@ -100,3 +100,13 @@ Le défaut bloquant restant était la création d'actions `pending` à partir d'
 Le frontend se resynchronise maintenant avec `GET /plans/{plan_id}` après un échec d'approbation et affiche immédiatement le statut PostgreSQL réel. La trace montre explicitement `action_id` et `action_index` ; après F5, elle indique que la latence n'est pas disponible au lieu d'inventer `0 ms`. Les descriptions actuelles des Tools parlent toutes de PostgreSQL. Enfin, `files/` et `outbox/` disposent de volumes Docker dédiés, ce qui conserve les documents et messages après recréation du conteneur et permet encore leur annulation après redémarrage.
 
 Quinze tests de non-régression ont été ajoutés. Avec les tests existants sur les comptes, historiques, calendrier, outils, plans et F5, la suite compte 43 tests PostgreSQL isolés et passe intégralement. `SPEC.md` et `README.md` ont été alignés sur l'architecture REST actuelle, les comptes, les statuts réels, le calendrier, la persistance des plans, les volumes et Claude Sonnet 5, sans modifier les entrées historiques qui décrivent légitimement l'ancienne étape SQLite.
+
+## Entrée 15 — 2026-08-19, suppression des événements du calendrier
+
+Ajout d'un bouton Supprimer sur chaque événement affiché, avec confirmation explicite avant l'appel `DELETE /calendar/events/{event_id}`. Le backend supprime la ligne PostgreSQL, marque l'action `create_calendar_event` correspondante comme `cancelled`, actualise son audit et recalcule le statut du plan. Deux tests couvrent la suppression complète et le cas d'un identifiant inconnu ; la suite compte désormais 45 tests.
+
+## Entrée 16 — 2026-08-19, isolation des comptes et traces anonymes
+
+Correction d'une fuite fonctionnelle du calendrier : un compte connecté ne voit et ne peut désormais supprimer que les événements rattachés à ses propres actions via `action_owners`. Un visiteur non connecté ne reçoit que les événements des plans dont les identifiants aléatoires sont mémorisés dans le `localStorage` de son navigateur. Les mêmes plans locaux alimentent maintenant les historiques de conversations et de tâches acceptées sans forcer une connexion.
+
+Ajout de `DELETE /history/accepted-actions/{action_id}` et d'un bouton « Supprimer de l'historique ». Ce retrait masque uniquement la ligne pour son propriétaire grâce à `action_owners.hidden_at`, sans annuler l'effet métier ni retirer l'autorisation sur un événement associé. Trois tests supplémentaires couvrent le masquage, l'interdiction d'agir sur l'historique d'un autre compte et l'isolation du calendrier ; la suite compte 48 tests.

@@ -19,7 +19,9 @@ Le Palier 4 est opérationnel :
 - les outils peuvent être activés ou désactivés depuis le menu Paramètre ;
 - les réponses de l'agent prennent en charge un rendu Markdown limité et sécurisé ;
 - un compte local permet d'afficher le profil et de conserver les historiques personnels ;
+- sans compte, les plans et historiques restent mémorisés uniquement dans le navigateur utilisé ;
 - les comptes, conversations, plans et actions sont enregistrés dans PostgreSQL ;
+- le calendrier d'un compte n'affiche jamais les événements d'un autre compte ;
 - un plan et les statuts de ses actions sont restaurés après un rechargement de page ;
 - un calendrier interactif permet de sélectionner une date et de préparer une demande ;
 - Docker Compose lance FastAPI et PostgreSQL, FastAPI restant exposé sur le port `8000`.
@@ -184,8 +186,9 @@ GET /plans/latest
 ```
 
 `GET /plans/{plan_id}` reconstruit la demande, la réponse et toutes les actions dans leur ordre
-d'origine, avec leurs arguments, statuts, résultats et erreurs. Le frontend conserve uniquement le
-`plan_id` courant dans `localStorage` puis relit PostgreSQL après un rechargement.
+d'origine, avec leurs arguments, statuts, résultats et erreurs. Le frontend conserve le `plan_id`
+courant et, pour un visiteur sans compte, jusqu'à 50 identifiants de plans dans `localStorage`, puis
+relit PostgreSQL après un rechargement.
 
 `GET /plans/latest` retourne le dernier plan du compte connecté.
 
@@ -194,11 +197,15 @@ d'origine, avec leurs arguments, statuts, résultats et erreurs. Le frontend con
 ```text
 GET /calendar/events
 GET /calendar/events?start=2026-08-01&end=2026-09-01
+DELETE /calendar/events/{event_id}
 ```
 
 La route retourne uniquement les événements réellement exécutés. Le calendrier recharge la période
 à chaque changement de mois, affiche un indicateur sur les jours concernés et détaille les horaires
-et participants de la date sélectionnée.
+et participants de la date sélectionnée. Le bouton Supprimer demande une confirmation, efface
+l'événement de PostgreSQL et marque son action d'origine comme `cancelled`. Un compte connecté ne
+reçoit que ses propres événements ; sans compte, le calendrier se limite aux plans mémorisés dans le
+navigateur courant.
 
 ### Compte et profil
 
@@ -218,9 +225,15 @@ Ces routes nécessitent une connexion :
 ```text
 GET /history/conversations
 GET /history/accepted-actions
+DELETE /history/accepted-actions/{action_id}
 ```
 
-Les conversations sont enregistrées après une réponse de l'agent. Les actions apparaissent dans l'historique des tâches acceptées après leur approbation et leur exécution.
+Les conversations sont enregistrées après une réponse de l'agent. Les actions apparaissent dans
+l'historique des tâches acceptées après leur approbation et leur exécution. La suppression d'une
+ligne d'historique la masque seulement pour ce compte et n'annule pas son effet métier. Sans
+connexion, le frontend reconstruit les deux historiques depuis les plans conservés dans le
+`localStorage` du navigateur ; ces traces locales ne sont ni visibles depuis un autre navigateur ni
+associées à un autre compte.
 
 ### Configuration des Tools
 
@@ -266,7 +279,7 @@ conservant une seule commande de lancement.
 
 ## Tests
 
-La suite comprend 43 tests, dont les régressions Palier 4 sur la validation avant `pending`, la
+La suite comprend 48 tests, dont les régressions Palier 4 sur la validation avant `pending`, la
 boucle multi-tours, l'idempotence, la restauration après F5, le calendrier et le coût estimé :
 
 ```bash
