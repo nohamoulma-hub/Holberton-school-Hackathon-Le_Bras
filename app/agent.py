@@ -7,13 +7,14 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import anthropic
 from dotenv import load_dotenv
+
+load_dotenv()
+
+import anthropic
 
 from app.plans import create_plan, finalize_plan
 from app.tools import execute_tool, get_active_tool_definitions
-
-load_dotenv()
 
 logger = logging.getLogger("agent")
 

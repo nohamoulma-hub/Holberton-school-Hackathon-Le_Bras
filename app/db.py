@@ -5,18 +5,21 @@ from psycopg import sql
 from psycopg.rows import dict_row
 
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
-DATABASE_SCHEMA = os.environ.get("DATABASE_SCHEMA", "public")
-
-
 def get_connection() -> psycopg.Connection:
-    """Ouvre une connexion PostgreSQL dont les lignes se lisent comme des dictionnaires."""
-    if not DATABASE_URL:
+    """Ouvre une connexion PostgreSQL dont les lignes se lisent comme des dictionnaires.
+
+    Lit DATABASE_URL/DATABASE_SCHEMA à l'appel plutôt qu'au chargement du module : ce module
+    est importé très tôt (via app.tools) par des modules qui n'ont pas encore forcément
+    appelé load_dotenv(), une constante figée au niveau module resterait vide en permanence.
+    """
+    database_url = os.environ.get("DATABASE_URL", "")
+    if not database_url:
         raise RuntimeError("DATABASE_URL manquante (voir .env.example)")
 
-    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
-    if DATABASE_SCHEMA != "public":
-        schema = sql.Identifier(DATABASE_SCHEMA)
+    conn = psycopg.connect(database_url, row_factory=dict_row)
+    database_schema = os.environ.get("DATABASE_SCHEMA", "public")
+    if database_schema != "public":
+        schema = sql.Identifier(database_schema)
         conn.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(schema))
         conn.execute(sql.SQL("SET search_path TO {}").format(schema))
         conn.commit()

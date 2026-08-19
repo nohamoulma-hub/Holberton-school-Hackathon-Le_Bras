@@ -233,7 +233,7 @@ def list_pending_actions(plan_id: str) -> list[dict[str, Any]]:
             "tool": row["tool_name"],
             "input": json.loads(row["input_json"]),
             "status": row["status"],
-            "created_at": row["created_at"],
+            "created_at": row["created_at"].isoformat(),
         }
         for row in rows
     ]
@@ -565,7 +565,7 @@ def _log_audit(
                 idempotency_key,
                 tool_name,
                 json.dumps(tool_input, ensure_ascii=False, default=str),
-                json.dumps(output, ensure_ascii=False) if output is not None else None,
+                json.dumps(output, ensure_ascii=False, default=str) if output is not None else None,
                 status,
                 error,
                 datetime.now(timezone.utc),
@@ -774,7 +774,7 @@ def approve_pending_action(action_id: int) -> dict[str, Any]:
             """,
             (
                 "executed" if result["ok"] else "error",
-                json.dumps(result.get("result"), ensure_ascii=False)
+                json.dumps(result.get("result"), ensure_ascii=False, default=str)
                 if result.get("result") is not None
                 else None,
                 result.get("error"),
