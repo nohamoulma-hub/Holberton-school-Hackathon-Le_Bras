@@ -3,6 +3,7 @@ import os
 from datetime import date
 from pathlib import Path
 
+import anthropic
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.staticfiles import StaticFiles
@@ -109,9 +110,63 @@ def health() -> dict:
 @app.post("/chat")
 def chat(body: ChatRequest, request: Request) -> dict:
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY manquante (voir .env)")
+        logger.error("Configuration Anthropic absente")
+        raise HTTPException(
+            status_code=503,
+            detail="Le service IA est indisponible en raison d'un problème de configuration.",
+        )
 
-    result = run_agent(body.message)
+    try:
+        result = run_agent(body.message)
+    except anthropic.AuthenticationError as exc:
+        logger.exception("Échec d'authentification auprès d'Anthropic")
+        raise HTTPException(
+            status_code=503,
+            detail="Le service IA est indisponible en raison d'un problème de configuration.",
+        ) from exc
+    except anthropic.APITimeoutError as exc:
+        logger.exception("Délai d'attente Anthropic dépassé")
+        raise HTTPException(
+            status_code=504,
+            detail="Le service IA met trop de temps à répondre. Veuillez réessayer.",
+        ) from exc
+    except anthropic.RateLimitError as exc:
+        logger.exception("Limite de requêtes Anthropic atteinte")
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "Le service IA est temporairement surchargé. "
+                "Veuillez réessayer dans quelques instants."
+            ),
+        ) from exc
+    except anthropic.APIConnectionError as exc:
+        logger.exception("Connexion à Anthropic impossible")
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Impossible de contacter le service IA. "
+                "Vérifiez votre connexion et réessayez."
+            ),
+        ) from exc
+    except anthropic.APIStatusError as exc:
+        logger.exception("Anthropic a retourné une erreur HTTP")
+        raise HTTPException(
+            status_code=502,
+            detail="Le service IA a rencontré une erreur. Veuillez réessayer.",
+        ) from exc
+    except anthropic.APIError as exc:
+        logger.exception("Erreur du SDK Anthropic")
+        raise HTTPException(
+            status_code=502,
+            detail="Le service IA a rencontré une erreur. Veuillez réessayer.",
+        ) from exc
+    except Exception as exc:
+        logger.exception("Erreur inattendue pendant le traitement de /chat")
+        raise HTTPException(
+            status_code=500,
+            detail="Une erreur interne est survenue. Veuillez réessayer.",
+        ) from exc
+
     user = current_user(request, required=False)
     if user is not None:
         try:

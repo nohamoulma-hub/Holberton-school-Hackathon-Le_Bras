@@ -59,6 +59,10 @@ const THEME_STORAGE_KEY = "le-bras-theme";
 const CURRENT_PLAN_STORAGE_KEY = "le-bras-current-plan";
 const ANONYMOUS_PLAN_HISTORY_KEY = "le-bras-anonymous-plan-history";
 const ANONYMOUS_HIDDEN_ACTIONS_KEY = "le-bras-anonymous-hidden-actions";
+const GENERIC_CHAT_ERROR = "Une erreur interne est survenue. Veuillez réessayer.";
+const CHAT_NETWORK_ERROR = (
+    "Impossible de contacter LE BRAS. Vérifiez votre connexion et réessayez."
+);
 const today = new Date();
 today.setHours(0, 0, 0, 0);
 let currentCalendarMonth = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -86,6 +90,31 @@ function writeLocalArray(storageKey, values) {
     } catch (error) {
         console.warn(`Impossible d'enregistrer ${storageKey}.`, error);
     }
+}
+
+async function readOptionalJson(response) {
+    try {
+        const body = await response.text();
+        if (!body) {
+            return null;
+        }
+        return JSON.parse(body);
+    } catch (error) {
+        return null;
+    }
+}
+
+function chatErrorMessage(data) {
+    if (typeof data?.detail === "string" && data.detail.trim()) {
+        return data.detail;
+    }
+    if (typeof data?.detail?.message === "string" && data.detail.message.trim()) {
+        return data.detail.message;
+    }
+    if (typeof data?.message === "string" && data.message.trim()) {
+        return data.message;
+    }
+    return GENERIC_CHAT_ERROR;
 }
 
 function anonymousPlanIds() {
@@ -1703,17 +1732,26 @@ form.addEventListener("submit", async (event) => {
     requestStatus.textContent = "LE BRAS prépare sa réponse";
 
     try {
-        const response = await fetch("/chat", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({message}),
-        });
-        const data = await response.json();
+        let response;
+        try {
+            response = await fetch("/chat", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({message}),
+            });
+        } catch (error) {
+            throw new Error(CHAT_NETWORK_ERROR);
+        }
+
+        const data = await readOptionalJson(response);
 
         if (!response.ok) {
-            throw new Error(data.detail || "Erreur du serveur");
+            throw new Error(chatErrorMessage(data));
+        }
+        if (!data || typeof data !== "object") {
+            throw new Error(GENERIC_CHAT_ERROR);
         }
 
         if (data.plan_id) {
