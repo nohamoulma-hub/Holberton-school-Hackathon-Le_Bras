@@ -152,15 +152,26 @@ def write_record(record_type: str, subject: str, payload: dict[str, Any]) -> dic
 
 
 def generate_document(title: str, content: str, filename: str) -> dict:
-    """Génère un fichier Markdown dans le dossier local dédié `files`."""
+    """Génère un fichier Markdown sans écraser un document portant déjà ce nom."""
     title = _required_text(title, "title", 300)
     content = _required_text(content, "content", 50_000)
     file_path = _safe_markdown_path(filename)
     FILES_DIR.mkdir(parents=True, exist_ok=True)
-    if file_path.exists():
-        raise ToolError(f"Le document {file_path.name} existe déjà")
-    file_path.write_text(f"# {title}\n\n{content}\n", encoding="utf-8")
-    return {"path": str(file_path.relative_to(PROJECT_DIR))}
+    document_content = f"# {title}\n\n{content}\n"
+    version = 1
+
+    while True:
+        candidate = file_path
+        if version > 1:
+            candidate = file_path.with_name(
+                f"{file_path.stem}-{version}{file_path.suffix}"
+            )
+        try:
+            with candidate.open("x", encoding="utf-8") as document:
+                document.write(document_content)
+            return {"path": str(candidate.relative_to(PROJECT_DIR))}
+        except FileExistsError:
+            version += 1
 
 
 def create_calendar_event(
@@ -387,8 +398,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "Propose la génération locale d'un document texte au format Markdown dans le dossier "
             "files. À utiliser lorsqu'un support écrit autonome est utile, par exemple un guide, "
             "une checklist, un brief ou un compte rendu ; ce livrable est distinct d'un message "
-            "ou d'une fiche structurée. Aucun PDF ou DOCX n'est produit. Effet de bord : "
-            "nécessite une validation humaine avant exécution."
+            "ou d'une fiche structurée. Si le nom existe déjà, un suffixe numérique préserve les "
+            "deux versions. Aucun PDF ou DOCX n'est produit. Effet de bord : nécessite une "
+            "validation humaine avant exécution."
         ),
         "input_schema": {
             "type": "object",
@@ -804,6 +816,7 @@ def approve_pending_action(action_id: int) -> dict[str, Any]:
             """,
             (datetime.now(timezone.utc), action_id),
         ).fetchone()
+        claimed = row is not None
         if row is None:
             row = conn.execute(
                 "SELECT * FROM actions WHERE id = %s",
@@ -814,14 +827,14 @@ def approve_pending_action(action_id: int) -> dict[str, Any]:
         conn.close()
     if row is None:
         return {"ok": False, "error": f"Action introuvable : {action_id}"}
-    if row["status"] == "executed":
+    if not claimed and row["status"] == "executed":
         return {
             "ok": True,
             "status": "executed",
             "result": json.loads(row["output_json"] or "{}"),
             "idempotent_replay": True,
         }
-    if row["status"] != "executing":
+    if not claimed:
         return {"ok": False, "error": f"L'action est déjà {row['status']}"}
 
     tool_input = json.loads(row["input_json"])

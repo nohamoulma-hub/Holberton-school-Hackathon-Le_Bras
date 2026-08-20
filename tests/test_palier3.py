@@ -214,13 +214,22 @@ class Palier3TestCase(unittest.TestCase):
         self.assertIsInstance(executed["result"]["record_id"], int)
 
     def test_generate_document(self):
-        _, executed = self.queue_and_approve(
+        _, first = self.queue_and_approve(
             "generate_document",
             {"title": "Bienvenue", "content": "Bienvenue dans l'équipe.", "filename": "paul.md"},
+            plan_id="plan-document-1",
         )
-        document_path = self.project_dir / executed["result"]["path"]
-        self.assertTrue(document_path.is_file())
-        self.assertIn("# Bienvenue", document_path.read_text(encoding="utf-8"))
+        _, second = self.queue_and_approve(
+            "generate_document",
+            {"title": "Mise à jour", "content": "Deuxième version.", "filename": "paul.md"},
+            plan_id="plan-document-2",
+        )
+        first_path = self.project_dir / first["result"]["path"]
+        second_path = self.project_dir / second["result"]["path"]
+        self.assertEqual(first_path.name, "paul.md")
+        self.assertEqual(second_path.name, "paul-2.md")
+        self.assertIn("# Bienvenue", first_path.read_text(encoding="utf-8"))
+        self.assertIn("# Mise à jour", second_path.read_text(encoding="utf-8"))
 
     def test_create_calendar_event(self):
         _, executed = self.queue_and_approve(

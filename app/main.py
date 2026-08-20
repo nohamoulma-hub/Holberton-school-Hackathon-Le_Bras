@@ -20,7 +20,7 @@ from app.accounts import (
     get_user_from_session,
 )
 from app.calendar_events import delete_calendar_event, list_calendar_events
-from app.db import database_is_ready, get_recent_audit_log, init_db
+from app.db import database_is_ready, get_connection, get_recent_audit_log, init_db
 from app.history import (
     hide_accepted_action,
     link_actions_to_user,
@@ -64,6 +64,26 @@ def current_user(request: Request, required: bool = True) -> dict | None:
     if required and user is None:
         raise HTTPException(status_code=401, detail="Connexion requise")
     return user
+
+
+def verify_action_access(action_id: int, user_id: int | None) -> None:
+    """Autorise les actions anonymes ou celles du compte propriétaire du plan."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT plans.user_id
+            FROM actions
+            JOIN plans ON plans.id = actions.plan_id
+            WHERE actions.id = %s
+            """,
+            (action_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if row is None or (row["user_id"] is not None and row["user_id"] != user_id):
+        raise HTTPException(status_code=404, detail="Action introuvable")
 
 
 def set_session_cookie(response: Response, token: str) -> None:
@@ -254,8 +274,10 @@ def toggle_tool(tool_name: str, body: ToolToggleRequest) -> dict:
 
 
 @app.post("/actions/{action_id}/approve")
-def approve_action(action_id: int) -> dict:
+def approve_action(action_id: int, request: Request) -> dict:
     """Exécute une action uniquement après cette validation humaine explicite."""
+    user = current_user(request, required=False)
+    verify_action_access(action_id, user["id"] if user is not None else None)
     result = approve_pending_action(action_id)
     if not result["ok"]:
         raise HTTPException(status_code=409, detail=result["error"])
@@ -263,8 +285,10 @@ def approve_action(action_id: int) -> dict:
 
 
 @app.post("/actions/{action_id}/reject")
-def reject_action(action_id: int) -> dict:
+def reject_action(action_id: int, request: Request) -> dict:
     """Refuse une action en attente sans provoquer son effet de bord."""
+    user = current_user(request, required=False)
+    verify_action_access(action_id, user["id"] if user is not None else None)
     result = reject_pending_action(action_id)
     if not result["ok"]:
         raise HTTPException(status_code=409, detail=result["error"])

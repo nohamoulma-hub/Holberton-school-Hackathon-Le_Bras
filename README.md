@@ -176,6 +176,12 @@ POST /actions/{action_id}/approve
 POST /actions/{action_id}/reject
 ```
 
+Pour un plan associé à un compte, ces deux routes vérifient côté backend que l'utilisateur courant
+est bien le propriétaire du plan. Les plans anonymes conservent leur fonctionnement actuel.
+L'approbation réserve atomiquement l'action dans PostgreSQL avec une transition conditionnelle
+`pending` vers `executing`, afin que deux validations concurrentes ne puissent pas déclencher deux
+fois le même effet.
+
 Le journal récent des appels d'outils est disponible avec `GET /trace`.
 
 ### Plans persistants
@@ -279,8 +285,9 @@ conservant une seule commande de lancement.
 
 ## Tests
 
-La suite comprend 48 tests, dont les régressions Palier 4 sur la validation avant `pending`, la
-boucle multi-tours, l'idempotence, la restauration après F5, le calendrier et le coût estimé :
+La suite automatisée complète couvre notamment la validation avant `pending`, la boucle multi-tours,
+l'idempotence, l'autorisation des décisions, les approbations concurrentes, la restauration après
+F5, le calendrier et le coût estimé. Elle doit passer sans échec :
 
 ```bash
 docker compose run --rm app python -m unittest discover -s tests -v
