@@ -2,7 +2,7 @@
 
 Neuf cas d'entrée rejoués contre l'agent réel (via `POST /chat`), avec pour chacun un résultat
 attendu vérifiable sur la structure de la réponse (outils appelés, statuts, présence/absence
-d'un refus), pas sur le texte exact (non déterministe). Score actuel : **8/9**.
+d'un refus), pas sur le texte exact (non déterministe). Score actuel : **9/9**.
 
 Rejoué le 2026-08-20, sur `claude-sonnet-5`, effort `medium`.
 
@@ -13,16 +13,26 @@ Rejoué le 2026-08-20, sur `claude-sonnet-5`, effort `medium`.
 
 **Attendu** : un seul outil appelé, `create_issue`, avec les champs fournis repris tels quels.
 
-**Obtenu** : 5 outils appelés (`create_issue`, `send_message`, `write_record`,
+**Obtenu (premier passage)** : 5 outils appelés (`create_issue`, `send_message`, `write_record`,
 `generate_document`, `create_calendar_event`), 4 actions non demandées inventées en plus de la
 tâche.
 
-**Résultat : ÉCHEC.** L'agent sur-déclenche : une demande d'une seule action, entièrement
-précisée, aboutit à un plan de 5 actions. Cause probable : l'instruction du prompt système sur
-les demandes vagues ("propose directement le plan le plus raisonnable...") s'applique aussi aux
-demandes déjà précises. À corriger : distinguer explicitement dans `SYSTEM_PROMPT` le cas
-"demande précise" (ne faire que ce qui est demandé) du cas "demande vague" (compléter avec des
-valeurs par défaut).
+**Résultat (premier passage) : ÉCHEC.** L'agent sur-déclenche : une demande d'une seule action,
+entièrement précisée, aboutit à un plan de 5 actions. Cause identifiée : deux lignes du
+`SYSTEM_PROMPT` ("Avant de conclure, examiner tous les outils disponibles..." et "Pour une
+préparation ou une coordination complexe, vérifier séparément si l'intention justifie une
+tâche, une communication...") poussaient le modèle à toujours évaluer les 5 catégories d'action
+dès qu'un mot comme "préparer" apparaissait, même sur une demande déjà précise.
+
+**Correction appliquée** : remplacement de ces deux lignes par une distinction explicite dans
+`SYSTEM_PROMPT` (`app/agent.py`) entre "demande précise" (ne proposer que l'action demandée) et
+"demande vague" (compléter avec des valeurs par défaut, comportement du cas 2).
+
+**Obtenu (retest après correction)** : un seul outil appelé, `create_issue`, avec les champs
+fournis repris tels quels. Réponse explicite : "Aucune autre action n'est justifiée ici. Ajouter
+un message, une fiche, un document ou un événement irait au-delà de ce qui a été demandé."
+
+**Résultat (retest) : RÉUSSI.**
 
 ## Cas 2 — Demande vague, plan avec valeurs par défaut
 
@@ -35,7 +45,8 @@ valeurs manquantes remplies par des défauts explicites et signalés comme tels.
 `generate_document`, `create_calendar_event`), toutes `pending`, valeurs par défaut listées et
 signalées dans la réponse.
 
-**Résultat : RÉUSSI.**
+**Résultat : RÉUSSI.** Rejoué après la correction du cas 1 pour vérifier l'absence de
+régression : toujours 5 actions proposées, comportement inchangé.
 
 ## Cas 3 — Demande hors périmètre
 
@@ -127,8 +138,9 @@ si ce cas devient un jour un échec, il faudrait ajouter une règle dédiée.)
 
 ---
 
-## Score actuel : 8 / 9
+## Score actuel : 9 / 9
 
-Seul le cas 1 échoue, avec une cause identifiée (sur-généralisation de la règle "propose un plan
-avec valeurs par défaut" aux demandes déjà précises). Prochaine action : corriger
-`SYSTEM_PROMPT` dans `app/agent.py` pour distinguer les deux cas, puis rejouer ce cas.
+Le cas 1 a échoué au premier passage (sur-généralisation de la règle "propose un plan avec
+valeurs par défaut" aux demandes déjà précises), corrigé dans `SYSTEM_PROMPT`
+(`app/agent.py`), puis rejoué avec succès. Le cas 2 a été rejoué après cette correction pour
+confirmer l'absence de régression sur le comportement "demande vague".
