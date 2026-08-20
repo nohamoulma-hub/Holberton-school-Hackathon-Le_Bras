@@ -6,6 +6,10 @@ d'un refus), pas sur le texte exact (non déterministe). Score actuel : **9/9**.
 
 Rejoué le 2026-08-20, sur `claude-sonnet-5`, effort `medium`.
 
+**Rejouable automatiquement** : `make eval` (ou `python3 eval/run_eval.py`) exécute ces 9 cas
+contre l'agent réel et affiche un score chiffré, sans passer par le serveur HTTP ni par le
+navigateur.
+
 ## Cas 1 — Demande précise à une seule action
 
 **Entrée** : « Crée une tâche pour préparer le poste de Paul, assignée à Sophie, pour le
