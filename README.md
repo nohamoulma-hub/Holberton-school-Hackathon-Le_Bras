@@ -301,3 +301,8 @@ Python 3.12 · FastAPI · Uvicorn · Anthropic SDK · Claude Sonnet 5 · Postgre
 - [Agent et Tools](AGENTS.md)
 - [Journal de conception](JOURNAL.md)
 - [Cas d’évaluation](eval/cases.md)
+
+## AUTHORS
+
+- Noham — [github.com/nohamoulma-hub](https://github.com/nohamoulma-hub)
+- Jonathan — [github.com/John-Natty](https://github.com/John-Natty)
