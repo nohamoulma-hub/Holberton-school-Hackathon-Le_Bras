@@ -1,136 +1,172 @@
 # LE BRAS
 
-LE BRAS est un prototype d'agent conversationnel développé dans le cadre d'un hackathon. L'utilisateur saisit une demande dans une interface web simple, puis le backend transmet cette demande à Claude via l'API Anthropic et affiche la réponse obtenue.
+Un agent opérationnel qui transforme une intention en actions, tout en laissant le contrôle final à l’humain.
 
-## État actuel — Palier 4
+`Utilisateur → Agent → propositions d’actions → validation humaine → exécution → audit`
 
-Le Palier 4 est opérationnel :
+## 🚀 Aperçu
 
-- le frontend HTML/CSS/JavaScript est servi par FastAPI ;
-- `GET /health` permet de vérifier que le backend fonctionne ;
-- `POST /chat` transmet un message à Claude et renvoie sa réponse avec la trace des outils ;
-- le frontend appelle `/chat` sans URL de backend codée en dur ;
-- Claude choisit parmi sept outils via le Tool Calling natif Anthropic ;
-- l'agent utilise `claude-sonnet-5` et affiche un coût estimé à partir des tokens ;
-- les arguments des Tools sont validés avant toute création d'action en attente ;
-- les effets de bord sont idempotents, audités et mis en attente d'une validation humaine ;
-- le frontend permet d'approuver ou refuser chaque action en attente ;
-- les outils locaux réversibles peuvent être annulés une fois ;
-- les outils peuvent être activés ou désactivés depuis le menu Paramètre ;
-- les réponses de l'agent prennent en charge un rendu Markdown limité et sécurisé ;
-- un compte local permet d'afficher le profil et de conserver les historiques personnels ;
-- sans compte, les plans et historiques restent mémorisés uniquement dans le navigateur utilisé ;
-- les comptes, conversations, plans et actions sont enregistrés dans PostgreSQL ;
-- le calendrier d'un compte n'affiche jamais les événements d'un autre compte ;
-- un plan et les statuts de ses actions sont restaurés après un rechargement de page ;
-- un calendrier interactif permet de sélectionner une date et de préparer une demande ;
-- Docker Compose lance FastAPI et PostgreSQL, FastAPI restant exposé sur le port `8000`.
+- L’utilisateur formule une demande en langage naturel.
+- Claude Sonnet 5 sélectionne les Tools appropriés via le Tool Calling natif Anthropic.
+- Les opérations en lecture seule sont exécutées immédiatement.
+- Chaque action à effet de bord est créée avec le statut `pending`.
+- L’utilisateur approuve ou refuse les actions une par une ; seul le backend peut lancer leur exécution.
+- Résultats, refus et erreurs restent visibles dans la trace et le journal d’audit.
 
-## Architecture actuelle
+> L’agent propose, l’utilisateur autorise, le backend contrôle et les Tools exécutent.
 
-```text
-Navigateur
-    -> Frontend HTML/CSS/JS
-    -> POST /chat
-    -> FastAPI
-    -> API Anthropic/Claude
-    -> tool_use
-    -> action en attente de validation
-    -> Tool local après approbation
-    -> tool_result et réponse affichés dans le frontend
-    -> plan et historique PostgreSQL associés au compte connecté
+## ✨ Fonctionnalités principales
+
+| Fonctionnalité | Description |
+| --- | --- |
+| Agent Claude | `claude-sonnet-5`, boucle multi-tours et Tool Calling natif Anthropic |
+| 7 Tools | Tâches, messages, fiches, documents, calendrier, consultation et annulation |
+| Human-in-the-loop | Approbation ou refus explicite de chaque effet de bord |
+| Exécution fiable | Validation des arguments, idempotence et réservation atomique des actions |
+| Persistance | Plans, comptes, sessions, historiques et audit dans PostgreSQL |
+| Interface | Frontend responsive, calendrier interactif et restauration du plan après F5 |
+| Isolation | Contrôle d’accès aux actions, calendriers et historiques liés aux comptes |
+| Observabilité | Trace technique, audit, résultats, erreurs, tokens, latence et coût estimé |
+| Résilience | Erreurs Anthropic et réseau affichées sans exposer de détails sensibles |
+| Configuration | Activation ou désactivation des Tools depuis l’interface, sans redémarrage |
+| Évaluation | 65 tests automatisés et 9 scénarios d’évaluation manuelle/automatisée |
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart TD
+    U[Utilisateur] --> F[Frontend HTML / CSS / JS]
+    F -->|POST /chat| API[FastAPI]
+    API --> C[Agent Claude Sonnet 5]
+    C --> TC{Tool Calling}
+
+    TC --> RO[READ_ONLY]
+    RO --> RI[Exécution immédiate]
+
+    TC --> SE[SIDE_EFFECT]
+    SE --> P[Action pending]
+    P --> H{Décision humaine}
+    H -->|Refus| R[rejected]
+    H -->|Approbation| V[Vérification backend]
+    V --> X[executing]
+    X --> T[Tool]
+    T -->|Succès| OK[executed]
+    T -->|Échec| E[error]
+
+    T --> O{Sortie selon le Tool}
+    O --> DB[(PostgreSQL)]
+    O --> FILES[files/]
+    O --> OUTBOX[outbox/]
+
+    RI --> OBS[Trace / audit / résultats]
+    R --> OBS
+    OK --> OBS
+    E --> OBS
+    OBS --> F
 ```
 
-FastAPI sert à la fois l'API et les fichiers statiques du frontend. PostgreSQL utilise un second
-conteneur dédié ; aucun conteneur frontend séparé n'est utilisé.
+Le frontend affiche les propositions et transmet les décisions, sans disposer du pouvoir d’exécuter un Tool. FastAPI orchestre Claude, valide les entrées, contrôle l’accès et réserve les actions. PostgreSQL porte l’état durable ; `files/` et `outbox/` reçoivent les sorties Markdown simulées. Docker Compose exécute l’application et la base dans deux conteneurs, sans conteneur frontend séparé.
 
-## Structure du projet
+## 🔐 Human-in-the-loop
 
-```text
-.
-├── app/
-│   ├── __init__.py
-│   ├── accounts.py
-│   ├── agent.py
-│   ├── calendar_events.py
-│   ├── db.py
-│   ├── history.py
-│   ├── main.py
-│   ├── plans.py
-│   └── tools.py
-├── frontend/
-│   ├── app.js
-│   ├── index.html
-│   └── style.css
-├── tests/
-│   ├── test_accounts_history.py
-│   ├── test_palier3.py
-│   ├── test_palier4_postgres.py
-│   ├── test_palier4_regressions.py
-│   └── postgres_test_case.py
-├── .dockerignore
-├── .env.example
-├── .gitignore
-├── docker-compose.yml
-├── Dockerfile
-├── README.md
-└── requirements.txt
-```
+Claude ne déclenche jamais directement un effet de bord : il soumet une proposition enregistrée en `pending`. Après une approbation humaine, le backend vérifie l’accès à l’action puis effectue une transition atomique `pending → executing`. Une seule approbation concurrente peut ainsi réserver l’exécution.
 
-## Prérequis
+- Succès : `pending → executing → executed`
+- Échec du Tool : `pending → executing → error`
+- Refus : `pending → rejected`, sans appel du Tool
+
+La clé Anthropic et les autres secrets restent côté serveur dans `.env`. Une instruction injectée dans un prompt ne vaut jamais validation humaine, et un Tool en erreur n’est pas présenté comme un succès. Ces mécanismes sont les protections mises en œuvre pour cette version hackathon ; ils ne constituent pas une garantie de sécurité absolue ni un remplacement des contrôles d’une plateforme de production.
+
+## 🧰 Tools
+
+| Tool | Type | Rôle |
+| --- | --- | --- |
+| `create_issue` | `SIDE_EFFECT` | Crée une tâche dans le faux issue tracker PostgreSQL |
+| `send_message` | `SIDE_EFFECT` | Simule un envoi de message dans `outbox/` |
+| `write_record` | `SIDE_EFFECT` | Enregistre une fiche métier structurée dans PostgreSQL |
+| `generate_document` | `SIDE_EFFECT` | Génère un document Markdown dans `files/` |
+| `create_calendar_event` | `SIDE_EFFECT` | Crée un événement de calendrier dans PostgreSQL |
+| `list_pending_actions` | `READ_ONLY` | Liste les actions en attente d’un plan |
+| `undo_last_action` | `SIDE_EFFECT` | Annule une action locale exécutée et réversible |
+
+[Voir la documentation complète de l’Agent](AGENTS.md)
+
+## ⚡ Quickstart
+
+### Prérequis
 
 - Git
 - Docker
 - Docker Compose
 - une clé API Anthropic valide
 
-## Quickstart Docker
-
-Clonez le dépôt et placez-vous dans le projet :
+### 1. Cloner le dépôt
 
 ```bash
 git clone https://github.com/nohamoulma-hub/Holberton-school-Hackathon-Le_Bras.git
 cd Holberton-school-Hackathon-Le_Bras
 ```
 
-Créez votre fichier d'environnement local :
+### 2. Configurer l’environnement
 
 ```bash
 cp .env.example .env
 ```
 
-Ajoutez ensuite votre clé Anthropic dans `.env` :
+Renseignez ensuite votre clé dans `.env` :
 
 ```dotenv
 ANTHROPIC_API_KEY=votre_cle_anthropic
 ```
 
-Les valeurs PostgreSQL locales sont déjà documentées dans `.env.example`. Modifiez-les dans
-`.env` avant un déploiement partagé.
+Le fichier `.env` contient des secrets locaux : **ne le commitez jamais**. Les autres valeurs proposées dans `.env.example` permettent de démarrer l’environnement Docker sans configuration supplémentaire.
 
-Lancez l'application :
+### 3. Lancer l’application
 
 ```bash
 docker compose up --build
 ```
 
-- Application : http://localhost:8000
-- Health : http://localhost:8000/health
-- Docs FastAPI : http://localhost:8000/docs
+| Service | URL |
+| --- | --- |
+| Application | <http://localhost:8000> |
+| Santé de l’API et de PostgreSQL | <http://localhost:8000/health> |
+| Documentation FastAPI | <http://localhost:8000/docs> |
 
-Pour arrêter et supprimer le conteneur et le réseau créés par Compose :
+### 4. Arrêter l’application
 
 ```bash
 docker compose down
 ```
 
-## API actuelle
+Les volumes `postgres_data`, `files_data` et `outbox_data` conservent les données. Pour les supprimer volontairement avec les conteneurs, utilisez `docker compose down --volumes`.
+
+## 🎬 Scénario de démonstration
+
+Saisissez par exemple :
+
+> Prépare l’arrivée du stagiaire Paul, équipe Data, le 25 août, buddy Sophie.
+
+L’agent propose un plan composé d’une tâche, d’un message, d’une fiche, d’un document et d’un événement. Approuvez certaines actions, refusez-en une, puis ouvrez le journal d’audit depuis le menu : seules les actions approuvées doivent être exécutées.
+
+## 🌐 API
+
+| Méthode | Route | Rôle |
+| --- | --- | --- |
+| `GET` | `/health` | Vérifie FastAPI et la connexion PostgreSQL |
+| `POST` | `/chat` | Envoie une intention à l’agent |
+| `POST` | `/actions/{action_id}/approve` | Approuve et tente d’exécuter une action |
+| `POST` | `/actions/{action_id}/reject` | Refuse une action en attente |
+| `GET` | `/plans/{plan_id}` | Restaure un plan et ses actions |
+| `GET` | `/plans/latest` | Récupère le dernier plan du compte connecté |
+| `GET` | `/trace` | Consulte le journal d’audit autorisé |
+| `GET` | `/tools` | Liste l’état des Tools |
+| `POST` | `/tools/{tool_name}/toggle` | Active ou désactive un Tool |
+| `POST` | `/auth/register`, `/auth/login`, `/auth/logout` | Gère le compte et la session |
+| `GET` | `/history/conversations`, `/history/accepted-actions` | Consulte les historiques personnels |
+| `GET` | `/calendar/events` | Liste les événements autorisés |
 
 ### `GET /health`
-
-Vérifie que l'application FastAPI est disponible.
-
-Réponse :
 
 ```json
 {
@@ -141,13 +177,11 @@ Réponse :
 
 ### `POST /chat`
 
-Envoie un message à Claude via l'API Anthropic.
-
-Corps de la requête :
+Requête minimale :
 
 ```json
 {
-  "message": "..."
+  "message": "Prépare l'arrivée de Paul"
 }
 ```
 
@@ -169,136 +203,79 @@ Réponse :
 }
 ```
 
-Les actions à effet de bord apparaissent d'abord avec le statut `pending`. Elles peuvent ensuite être validées ou refusées depuis le frontend, qui appelle les endpoints suivants :
+Le contrat détaillé et les autres routes sont également consultables dans Swagger à l’adresse <http://localhost:8000/docs>.
+
+## 📁 Structure du projet
 
 ```text
-POST /actions/{action_id}/approve
-POST /actions/{action_id}/reject
+.
+├── app/                    # API, Agent, Tools, comptes et persistance
+│   ├── main.py             # Routes FastAPI et frontend statique
+│   ├── agent.py            # Prompt et boucle de Tool Calling
+│   ├── tools.py            # Définitions, exécution, approbation et audit
+│   ├── db.py               # Connexion et schéma PostgreSQL
+│   ├── plans.py            # Cycle de vie et restauration des plans
+│   ├── accounts.py         # Comptes et sessions
+│   ├── history.py          # Historiques personnels
+│   └── calendar_events.py  # Consultation et suppression des événements
+├── frontend/               # Interface HTML, CSS et JavaScript
+├── tests/                  # Suite automatisée PostgreSQL isolée
+├── eval/                   # Cas d’évaluation et runner
+├── AGENTS.md               # Périmètre et contrat de l’Agent
+├── SPEC.md                 # Spécification fonctionnelle
+├── JOURNAL.md              # Journal de conception
+├── Makefile                # Commande d’évaluation
+├── Dockerfile
+└── docker-compose.yml
 ```
 
-Pour un plan associé à un compte, ces deux routes vérifient côté backend que l'utilisateur courant
-est bien le propriétaire du plan. Les plans anonymes conservent leur fonctionnement actuel.
-L'approbation réserve atomiquement l'action dans PostgreSQL avec une transition conditionnelle
-`pending` vers `executing`, afin que deux validations concurrentes ne puissent pas déclencher deux
-fois le même effet.
+## ⚙️ Configuration
 
-Le journal récent des appels d'outils est disponible avec `GET /trace`.
+| Variable | Valeur par défaut | Usage |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | aucune | Clé API Anthropic requise |
+| `AGENT_EFFORT` | `medium` | Effort Claude : `low`, `medium`, `high`, `xhigh` ou `max` |
+| `APP_TIMEZONE` | `Europe/Paris` | Interprétation des dates relatives |
+| `DISABLED_TOOLS` | vide | Tools désactivés au démarrage, séparés par des virgules |
+| `SESSION_COOKIE_SECURE` | `false` | À passer à `true` derrière HTTPS |
+| `POSTGRES_DB` | `lebras` | Base PostgreSQL locale |
+| `POSTGRES_USER` | `lebras` | Utilisateur PostgreSQL local |
+| `POSTGRES_PASSWORD` | `lebras_local_password` | Mot de passe PostgreSQL local à remplacer hors démo |
+| `DATABASE_URL` | voir `.env.example` | URL de connexion PostgreSQL |
 
-### Plans persistants
+## 🧪 Tests et évaluation
 
-```text
-GET /plans/{plan_id}
-GET /plans/latest
-```
-
-`GET /plans/{plan_id}` reconstruit la demande, la réponse et toutes les actions dans leur ordre
-d'origine, avec leurs arguments, statuts, résultats et erreurs. Le frontend conserve le `plan_id`
-courant et, pour un visiteur sans compte, jusqu'à 50 identifiants de plans dans `localStorage`, puis
-relit PostgreSQL après un rechargement.
-
-`GET /plans/latest` retourne le dernier plan du compte connecté.
-
-### Calendrier persistant
-
-```text
-GET /calendar/events
-GET /calendar/events?start=2026-08-01&end=2026-09-01
-DELETE /calendar/events/{event_id}
-```
-
-La route retourne uniquement les événements réellement exécutés. Le calendrier recharge la période
-à chaque changement de mois, affiche un indicateur sur les jours concernés et détaille les horaires
-et participants de la date sélectionnée. Le bouton Supprimer demande une confirmation, efface
-l'événement de PostgreSQL et marque son action d'origine comme `cancelled`. Un compte connecté ne
-reçoit que ses propres événements ; sans compte, le calendrier se limite aux plans mémorisés dans le
-navigateur courant.
-
-### Compte et profil
-
-```text
-POST /auth/register
-POST /auth/login
-POST /auth/logout
-GET  /auth/me
-```
-
-L'inscription et la connexion utilisent une adresse e-mail et un mot de passe d'au moins huit caractères. La session est conservée dans un cookie `HttpOnly` pendant sept jours.
-
-### Historiques personnels
-
-Ces routes nécessitent une connexion :
-
-```text
-GET /history/conversations
-GET /history/accepted-actions
-DELETE /history/accepted-actions/{action_id}
-```
-
-Les conversations sont enregistrées après une réponse de l'agent. Les actions apparaissent dans
-l'historique des tâches acceptées après leur approbation et leur exécution. La suppression d'une
-ligne d'historique la masque seulement pour ce compte et n'annule pas son effet métier. Sans
-connexion, le frontend reconstruit les deux historiques depuis les plans conservés dans le
-`localStorage` du navigateur ; ces traces locales ne sont ni visibles depuis un autre navigateur ni
-associées à un autre compte.
-
-### Configuration des Tools
-
-```text
-GET  /tools
-POST /tools/{tool_name}/toggle
-```
-
-L'état d'un Tool est appliqué dès la demande suivante, sans redémarrer le serveur.
-
-La clé d'idempotence d'une action dépend de son `plan_id`, de son `action_index`, du Tool et de ses arguments. Rejouer exactement la même action ne répète donc pas son effet, sans confondre deux plans ou deux positions différentes.
-
-Les intégrations sont locales pour ce hackathon : les comptes, historiques, plans, issues, records,
-événements et audits utilisent PostgreSQL ; la messagerie écrit des fichiers Markdown sous
-`outbox/` et les documents sont générés sous `files/`. Les volumes Docker `postgres_data`,
-`outbox_data` et `files_data` conservent ces données après la recréation des conteneurs.
-
-L'ancien fichier `data.db` n'est ni importé ni supprimé automatiquement. Une base PostgreSQL vide
-est initialisée au démarrage avec toutes les tables nécessaires.
-
-## Variables d'environnement et sécurité
-
-La vraie clé Anthropic doit être enregistrée uniquement dans le fichier local `.env`. Ce fichier ne doit jamais être commité ni envoyé sur un dépôt distant. Le fichier `.env.example` documente uniquement les variables attendues et ne doit contenir aucune vraie clé. `APP_TIMEZONE` définit le fuseau utilisé par Claude pour résoudre les dates relatives, avec `Europe/Paris` par défaut. Les mots de passe sont dérivés avec PBKDF2 et les jetons de session ne sont stockés qu'après hachage.
-
-## Stack technique
-
-- Python 3.12
-- FastAPI
-- Uvicorn
-- Anthropic SDK
-- Claude Sonnet 5
-- PostgreSQL 16
-- psycopg 3
-- HTML, CSS et JavaScript
-- Docker
-- Docker Compose
-
-## Pourquoi deux conteneurs au Palier 4 ?
-
-Le conteneur `app` sert toujours le frontend et l'API. Le conteneur `db` isole PostgreSQL et son
-volume persistant. Le healthcheck empêche FastAPI de démarrer avant que la base soit prête, tout en
-conservant une seule commande de lancement.
-
-## Tests
-
-La suite automatisée complète couvre notamment la validation avant `pending`, la boucle multi-tours,
-l'idempotence, l'autorisation des décisions, les approbations concurrentes, la restauration après
-F5, le calendrier et le coût estimé. Elle doit passer sans échec :
+La suite de 65 tests utilise des schémas PostgreSQL isolés et ne réalise pas d’appel Claude réel :
 
 ```bash
+docker compose up -d db
 docker compose run --rm app python -m unittest discover -s tests -v
 ```
 
+L’évaluation rejoue 9 scénarios réels : sélection de Tool, demande vague, hors périmètre, Tool désactivé, boucle multi-tours, erreur d’exécution et injections de prompt. Elle appelle l’API Anthropic et consomme donc des tokens :
+
+```bash
+docker compose run --rm app python eval/run_eval.py
+```
+
+Avec un environnement Python et PostgreSQL configuré localement, la même évaluation est disponible via `make eval`. Les attentes et le dernier résultat documenté sont détaillés dans [`eval/cases.md`](eval/cases.md).
+
+## 🧱 Stack
+
+Python 3.12 · FastAPI · Uvicorn · Anthropic SDK · Claude Sonnet 5 · PostgreSQL 16 · psycopg 3 · HTML/CSS/JavaScript · Docker · Docker Compose
+
 ## Limites actuelles
 
-Le projet ne propose pas encore :
+- Les issues, messages et événements sont des intégrations locales simulées, pas des connexions à des services tiers.
+- Les documents générés sont uniquement au format Markdown.
+- Il n’existe pas encore de récupération de mot de passe, de vérification d’adresse e-mail, de rôles fins ou de multi-organisation.
+- Le calendrier ne gère ni récurrence ni vérification de disponibilité métier.
+- L’annulation cible des actions locales réversibles ; elle ne fournit pas de pile d’undo multi-niveaux.
+- Sans compte, la continuité dépend des identifiants de plans conservés dans le `localStorage` du navigateur.
 
-- de véritables intégrations tierces pour les issues, messages ou calendriers ;
-- de migration automatique des anciennes données SQLite vers PostgreSQL ;
-- de récupération de mot de passe ou de vérification d'adresse e-mail ;
-- de gestion des validations concurrentes ;
-- d'annulation multi-niveaux.
+## Documentation
+
+- [Spécification fonctionnelle](SPEC.md)
+- [Agent et Tools](AGENTS.md)
+- [Journal de conception](JOURNAL.md)
+- [Cas d’évaluation](eval/cases.md)
