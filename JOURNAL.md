@@ -1,6 +1,18 @@
 # JOURNAL — travail avec l'IA
 
-Entrées rédigées par Noham (back / agent / idempotence / audit). Jo complète avec sa partie (front / adaptateurs Tool / doc).
+Ce journal retrace les principales décisions prises avec l'aide de l'IA pendant le développement de LE BRAS.
+
+Il documente notamment les cas où une proposition de l'IA était incorrecte, incomplète ou inadaptée, ainsi que les corrections, refus et décisions prises par l'équipe.
+
+## Entrées clés pour la livraison
+
+| Entrée | Problème rencontré | Correction |
+| --- | --- | --- |
+| 7 | Clé Anthropic chargée trop tard | Chargement de `.env` corrigé |
+| 10 | Trop de questions avant d'agir | Valeurs par défaut explicites |
+| 12 | Contournement d'un Tool désactivé | Substitution interdite |
+| 13 | Erreur JSON sur la boucle multi-Tools | Sérialisation corrigée |
+| 18 | 5 actions proposées au lieu d'une | Distinction demande précise / vague |
 
 ## Entrée 1 — 2026-08-18, cadrage (palier 1)
 
