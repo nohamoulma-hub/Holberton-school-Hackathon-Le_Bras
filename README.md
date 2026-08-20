@@ -264,6 +264,28 @@ Avec un environnement Python et PostgreSQL configuré localement, la même éval
 
 Python 3.12 · FastAPI · Uvicorn · Anthropic SDK · Claude Sonnet 5 · PostgreSQL 16 · psycopg 3 · HTML/CSS/JavaScript · Docker · Docker Compose
 
+## ⚙️ Choix techniques
+
+| Choix | Pourquoi |
+| --- | --- |
+| FastAPI | API légère et simple à exposer pendant le hackathon |
+| PostgreSQL | Source de vérité persistante pour les plans, actions, comptes et audits |
+| Docker Compose | Environnement reproductible avec une seule commande |
+| HTML / CSS / JavaScript | Interface légère sans framework frontend |
+| Tool Calling Anthropic | Claude choisit les Tools selon leur description |
+| Human-in-the-loop | Aucun effet de bord sans validation humaine explicite |
+| Trace et audit | Comprendre les actions observables de l’Agent |
+
+## ↔️ Choix écartés
+
+| Option écartée | Choix retenu | Pourquoi |
+| --- | --- | --- |
+| SQLite | PostgreSQL | Meilleure persistance et gestion des accès concurrents |
+| Exécution directe des Tools | `pending` + validation humaine | Garder le contrôle humain |
+| Routage par mots-clés | Tool Calling Claude | Éviter un routage métier codé en dur |
+| Intégrations tierces réelles | Simulations locales | Prototype autonome et démontrable |
+| Framework frontend | JavaScript natif | Réduire les dépendances et la complexité |
+
 ## Limites actuelles
 
 - Les issues, messages et événements sont des intégrations locales simulées, pas des connexions à des services tiers.
